@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "new-wa-bot"
+version = "0.1.0"
+description = "WhatsApp бот на Green API с базой на Postgres."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic==2.6.4",
+    "python-dotenv==1.0.1",
+    "whatsapp-chatbot-python==0.9.6",
+    "SQLAlchemy==2.0.28",
+    "alembic==1.13.1",
+    "asyncpg==0.29.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.4.0",
+    "pytest>=8.3.0"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app", "app.*"]
+
+[tool.ruff]
+line-length = 100
+src = ["app"]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle
+    "F",  # pyflakes
+    "W",  # warnings
+    "B",  # bugbear
+    "I",  # isort
+]
+ignore = ["E203"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+pythonpath = ["app"]
+testpaths = ["tests"]

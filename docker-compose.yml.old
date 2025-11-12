@@ -1,0 +1,120 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-appdb}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - app_network
+      
+  # Временно закомментировал, чтобы не мешал тестированию других сервисов
+  # wa_app:
+  #   build:
+  #     context: .
+  #     dockerfile: wa_app/Dockerfile
+  #   env_file: .env
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   expose:
+  #     - "6000"
+  #   restart: unless-stopped
+  #   networks:
+  #     - app_network
+
+  # tg_bot:
+  #   build:
+  #     context: .
+  #     dockerfile: tg_bot/Dockerfile
+  #   env_file: .env
+  #   # wa_app временно закомментирован выше, поэтому зависимость на него сломает проект.
+  #   # Если нужно, раскомментируйте сервис wa_app и восстановите зависимость.
+  #   depends_on:
+  #     - postgres
+  #   restart: unless-stopped
+  #   networks:
+  #     - app_network
+
+  # wa_bot:
+  #   build:
+  #     context: .
+  #     dockerfile: wa_bot/Dockerfile
+  #   env_file: .env
+  #   depends_on:
+  #     - postgres
+  #   restart: unless-stopped
+  #   networks:
+  #     - app_network
+
+  migrate:
+    build:
+      context: .
+      dockerfile: wa_app/Dockerfile
+    env_file: .env
+    command: ["alembic", "upgrade", "head"]
+    # Зависимости в новом синтаксисе проще — используем список сервисов.
+    depends_on:
+      - postgres
+    networks:
+      - app_network
+    profiles: ["migrate"]
+  # Временное игнорирование nginx, чтобы не мешал тестированию других сервисов
+  # nginx:
+  #   image: nginx:stable
+  #   depends_on:
+  #     wa_app:
+  #       condition: service_started
+  #   volumes:
+  #     - ./nginx/conf:/etc/nginx/conf.d:ro
+  #     - ./nginx/certbot/conf:/etc/letsencrypt
+  #     - ./nginx/certbot/www:/var/www/certbot
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   restart: unless-stopped
+  #   networks:
+  #     - app_network
+  # # Контейнер для автоматического получения и обновления SSL-сертификатов от Let's Encrypt
+  # certbot:
+  #   image: certbot/certbot:latest
+  #   depends_on:
+  #     - nginx
+  #   environment:
+  #     INTERVAL_HOURS: "12"
+  #   volumes:
+  #     - ./nginx/certbot/conf:/etc/letsencrypt
+  #     - ./nginx/certbot/www:/var/www/certbot
+  #     - ./nginx/certbot/renew-loop.sh:/usr/local/bin/renew-loop.sh:ro
+  #   entrypoint: [ "/bin/sh", "/usr/local/bin/renew-loop.sh" ]
+  #   restart: unless-stopped
+  #   networks:
+  #     - app_network
+  # # Контейнер для отслеживания изменений сертификатов и перезагрузки nginx
+  # reloader:
+  #   image: alpine:3
+  #   depends_on:
+  #     - nginx
+  #   # Общий PID namespace с nginx, чтобы можно было послать HUP master-процессу (pid 1 в этом namespace)
+  #   pid: "service:nginx"
+  #   volumes:
+  #     - ./nginx/certbot/conf:/etc/letsencrypt:ro
+  #   command: /bin/sh -c "apk add --no-cache inotify-tools >/dev/null 2>&1; echo '[reloader] watching /etc/letsencrypt/live'; while true; do inotifywait -e close_write,create,delete -r /etc/letsencrypt/live >/dev/null 2>&1; echo '[reloader] change detected -> HUP nginx'; kill -HUP 1 || true; sleep 1; done"
+  #   restart: unless-stopped
+  #   networks:
+  #     - app_network
+
+volumes:
+  pg_data:
+
+networks:
+  app_network:
+    driver: bridge

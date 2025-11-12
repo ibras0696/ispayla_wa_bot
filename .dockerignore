@@ -1,0 +1,13 @@
+.venv/
+*.pyc
+__pycache__/
+.env.*
+!.env
+!.env.example
+.git
+.vscode/
+.idea/
+.DS_Store
+
+# Не включаем node_modules, если есть
+node_modules/
