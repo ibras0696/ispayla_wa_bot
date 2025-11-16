@@ -24,6 +24,8 @@ services:
         condition: service_healthy
     env_file:
       - .env
+    volumes:
+      - ./media:/app/media
     command: ["python", "-m", "app.bot_runner"]
 
 volumes:

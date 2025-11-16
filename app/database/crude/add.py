@@ -13,7 +13,7 @@ class CrudeAdd:
 
     # Инициализация класса сессии для работы с БД
     def __init__(self):
-        self.session: async_sessionmaker = AsyncSessionLocal()
+        self.session: async_sessionmaker = AsyncSessionLocal
 
     # Создание объявления
     async def add(self,

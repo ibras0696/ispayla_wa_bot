@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.future import select
-from sqlalchemy import update, delete
+from sqlalchemy import update, delete, func
 
 from ..models import CarBrand
 from ..db import AsyncSessionLocal
@@ -12,7 +12,7 @@ class CrudeCarBrand:
 
     # Инициализация класса сессии для работы с БД
     def __init__(self):
-        self.session: async_sessionmaker = AsyncSessionLocal()
+        self.session: async_sessionmaker = AsyncSessionLocal
 
     # Получение всех марок автомобилей
     async def get_all(self) -> list[CarBrand]:
@@ -109,3 +109,10 @@ class CrudeCarBrand:
             except Exception:
                 await session.rollback()
                 raise
+
+    async def get_by_name(self, name: str) -> CarBrand | None:
+        async with self.session() as session:
+            result = await session.execute(
+                select(CarBrand).where(func.lower(CarBrand.name) == func.lower(name))
+            )
+            return result.scalar_one_or_none()

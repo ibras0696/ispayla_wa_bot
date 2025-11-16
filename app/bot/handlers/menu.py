@@ -6,14 +6,17 @@ from whatsapp_chatbot_python import Notification
 
 from ...config import Settings
 from ..services.guard import guard_sender, chat_sender
-from ..services.state import ensure_user, get_balance, get_user
+from ..services.state import ensure_user
 from ..ui.buttons import MAIN_MENU_BUTTONS, TEXT_TO_BUTTON
+from .profile import build_profile_text
+from .sell import send_sell_menu, handle_sell_button, handle_sell_text
+from .buy import handle_buy_option, handle_buy_text
 
 logger = logging.getLogger("app.bot.handlers.menu")
 
 
-
 def handle_main_menu(notification: Notification, settings: Settings, allowed: set[str] | None) -> None:
+    """Показать базовое меню (профиль/продажа/покупка)."""
     if not guard_sender(notification, allowed):
         return
     sender = chat_sender(notification)
@@ -33,52 +36,11 @@ def handle_main_menu(notification: Notification, settings: Settings, allowed: se
         "{{host}}/waInstance{{idInstance}}/sendInteractiveButtonsReply/{{apiTokenInstance}}",
         payload,
     )
-    logger.debug("Меню отправлено для %s", sender)
-
-
-def _profile_text(sender: str) -> str:
-    user = get_user(sender)
-    if not user:
-        return "Профиль не найден."
-    username = user.username or "Не указано"
-    registered = (
-        user.registered_at.strftime("%Y-%m-%d %H:%M")
-        if getattr(user, "registered_at", None)
-        else "-"
-    )
-    return (
-        "Профиль\n"
-        f"ID: {sender}\n"
-        f"Имя: {username}\n"
-        f"Баланс: {get_balance(sender)} ₽\n"
-        f"Регистрация: {registered}"
-    )
-
-
-def _send_menu_reply(notification: Notification, settings: Settings, sender: str, button_id: str | None) -> None:
-    responses = {
-        "profile": _profile_text(sender),
-        "sell": (
-            "Продажа авто (демо)\n"
-            "- VIN: WBA00000000000000\n"
-            "- Марка/модель: BMW 3-Series\n"
-            "- Цена: 1 200 000 ₽\n"
-            "- Статус: готовим форму публикации."
-        ),
-        "buy": (
-            "Покупка авто (демо)\n"
-            "- Бюджет: до 1 500 000 ₽\n"
-            "- Пожелания: пробег < 100 тыс., не старше 2016 г.\n"
-            "- Статус: подбор скоро станет доступен."
-        ),
-    }
-    reply = responses.get(button_id, settings.auto_reply_text)
-    if reply:
-        logger.debug("Меню: %s выбрал %s", sender, button_id)
-        notification.answer(reply)
+    logger.debug("Главное меню отправлено для %s", sender)
 
 
 def handle_menu_selection(notification: Notification, settings: Settings, allowed: set[str] | None) -> None:
+    """Обработчик reply-кнопок основного меню."""
     if not guard_sender(notification, allowed):
         return
     message_data = notification.event.get("messageData", {})
@@ -90,20 +52,37 @@ def handle_menu_selection(notification: Notification, settings: Settings, allowe
     if not button_data:
         return
     button_id = button_data.get("selectedButtonId") or button_data.get("selectedId")
-    sender = chat_sender(notification)
-    ensure_user(sender, notification.event.get("senderData", {}).get("senderName"))
-    _send_menu_reply(notification, settings, sender, button_id)
+    if not button_id:
+        return
+    _dispatch_button(notification, settings, button_id)
 
 
 def handle_menu_text(notification: Notification, settings: Settings, allowed: set[str] | None) -> None:
+    """Обработать текстовые команды, соответствующие кнопкам."""
     if not guard_sender(notification, allowed):
         return
     text = notification.message_text
     if not text:
         return
-    button_id = TEXT_TO_BUTTON.get(text.strip().lower())
-    if not button_id:
-        return
     sender = chat_sender(notification)
     ensure_user(sender, notification.event.get("senderData", {}).get("senderName"))
-    _send_menu_reply(notification, settings, sender, button_id)
+
+    key = TEXT_TO_BUTTON.get(text.strip().lower())
+    if key:
+        _dispatch_button(notification, settings, key)
+        return
+    if handle_sell_text(notification, settings, sender, text):
+        return
+    if handle_buy_text(notification, settings, sender, text):
+        return
+
+
+def _dispatch_button(notification: Notification, settings: Settings, button_id: str) -> None:
+    sender = chat_sender(notification)
+    ensure_user(sender, notification.event.get("senderData", {}).get("senderName"))
+    if button_id == "profile":
+        notification.answer(build_profile_text(sender))
+    elif button_id.startswith("sell") or button_id == "sell":
+        handle_sell_button(notification, settings, sender, button_id)
+    elif button_id == "buy":
+        handle_buy_option(notification, settings, sender, button_id)

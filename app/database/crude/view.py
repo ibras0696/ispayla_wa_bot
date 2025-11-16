@@ -14,7 +14,7 @@ class CrudeViewLog:
 
     # Инициализация класса сессии для работы с БД
     def __init__(self):
-        self.session: async_sessionmaker = AsyncSessionLocal()
+        self.session: async_sessionmaker = AsyncSessionLocal
 
     # Добавление записи о просмотре
     async def add(self, ad_id: int, sender: str) -> ViewLog:

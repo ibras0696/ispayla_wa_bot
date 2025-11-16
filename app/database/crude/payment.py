@@ -11,7 +11,7 @@ class CrudePayment:
 
     # Инициализация класса сессии для работы с БД
     def __init__(self):
-        self.session: async_sessionmaker = AsyncSessionLocal()
+        self.session: async_sessionmaker = AsyncSessionLocal
 
     # Создание платежа
     async def add(self, sender: str, amount: int, description: str | None = None) -> Payment:

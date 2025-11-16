@@ -193,3 +193,4 @@ cython_debug/
 
 # Тестовый модуль
 test.py
+media/

@@ -14,7 +14,8 @@ dependencies = [
     "whatsapp-chatbot-python==0.9.6",
     "SQLAlchemy==2.0.28",
     "alembic==1.13.1",
-    "asyncpg==0.29.0"
+    "asyncpg==0.29.0",
+    "requests==2.32.3",
 ]
 
 [project.optional-dependencies]

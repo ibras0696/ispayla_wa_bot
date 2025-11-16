@@ -12,7 +12,7 @@ class CrudeFavorite:
 
     # Инициализация класса сессии для работы с БД
     def __init__(self):
-        self.session: async_sessionmaker = AsyncSessionLocal()
+        self.session: async_sessionmaker = AsyncSessionLocal
 
     # Добавление объявления в избранное
     async def add(self, sender: str, ad_id: int) -> Favorite:

@@ -13,7 +13,7 @@ class CrudeAdImage:
 
     # Инициализация класса сессии для работы с БД
     def __init__(self):
-        self.session: async_sessionmaker = AsyncSessionLocal()
+        self.session: async_sessionmaker = AsyncSessionLocal
 
     # Добавление изображения к объявлению
     async def add(self, ad_id: int, image_url: str) -> AdImage:

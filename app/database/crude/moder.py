@@ -12,7 +12,7 @@ class CrudeModeration:
 
     # Инициализация класса сессии для работы с БД
     def __init__(self):
-        self.session: async_sessionmaker = AsyncSessionLocal()
+        self.session: async_sessionmaker = AsyncSessionLocal
 
     # Получение всех объявлений со статусом `pending`
     async def get_pending_ads(self) -> list[Ad]:
@@ -114,7 +114,7 @@ class CrudeModerator:
 
     # Инициализация класса сессии для работы с БД
     def __init__(self):
-        self.session: async_sessionmaker = AsyncSessionLocal()
+        self.session: async_sessionmaker = AsyncSessionLocal
 
     # Создание модератора
     async def add(self, telegram_id: int, username: str | None = None) -> Moderator:
