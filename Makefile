@@ -71,4 +71,7 @@ db-shell:
 logs:
 	@echo "[compose] docker compose logs -f bot"
 	docker compose logs -f bot
-restart: downv upb logs
+
+restart: down up logs
+
+restart_full: downv upb logs

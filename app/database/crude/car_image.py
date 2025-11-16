@@ -57,6 +57,18 @@ class CrudeAdImage:
             result = await session.execute(select(AdImage).where(AdImage.ad_id == ad_id))
             return result.scalars().all()
 
+    async def get_map_by_ad_ids(self, ad_ids: list[int]) -> dict[int, list[AdImage]]:
+        """Вернуть словарь {ad_id: [AdImage,...]} для указанного списка."""
+        if not ad_ids:
+            return {}
+        async with self.session() as session:
+            result = await session.execute(select(AdImage).where(AdImage.ad_id.in_(ad_ids)))
+            images = result.scalars().all()
+        mapping: dict[int, list[AdImage]] = {}
+        for img in images:
+            mapping.setdefault(img.ad_id, []).append(img)
+        return mapping
+
     # Удаление изображения объявления
     async def delete(self, image_id: int) -> bool | None:
         """

@@ -53,7 +53,21 @@ async def _get_ads_preview(sender: str, limit: int = 5):
     ads = await crud_manager.ad.get_by_sender(sender)
     total = len(ads)
     active = sum(1 for ad in ads if getattr(ad, "is_active", False))
-    return total, active, ads[:limit]
+    ads_sorted = sorted(ads, key=lambda ad: getattr(ad, "created_at", None) or 0, reverse=True)
+    subset = ads_sorted[:limit]
+    images_map = await crud_manager.car_image.get_map_by_ad_ids([ad.id for ad in subset])
+    summary = []
+    for ad in subset:
+        imgs = images_map.get(ad.id) or []
+        summary.append({
+            "id": ad.id,
+            "title": getattr(ad, "title", None) or f"Объявление #{ad.id}",
+            "price": getattr(ad, "price", 0),
+            "status": "активно" if getattr(ad, "is_active", False) else "в обработке",
+            "photo": imgs[0].image_url if imgs else None,
+            "ad": ad,
+        })
+    return total, active, summary
 
 
 async def _get_brand_by_name(name: str):
@@ -109,8 +123,21 @@ def get_user(sender: str):
 
 
 def get_ads_preview(sender: str, limit: int = 5):
-    """Получить количество объявлений и срез последних записей."""
+    """Получить статистику и срез последних объявлений."""
     return db_runner.run(_get_ads_preview(sender, limit))
+
+
+async def _get_ad_with_images(sender: str, ad_id: int):
+    ad = await crud_manager.ad.get_by_id(ad_id)
+    if not ad or ad.sender != sender:
+        return None, []
+    images = await crud_manager.car_image.get_all_by_ad_id(ad_id)
+    return ad, images
+
+
+def get_ad_with_images(sender: str, ad_id: int):
+    """Вернуть объявление и список его изображений."""
+    return db_runner.run(_get_ad_with_images(sender, ad_id))
 
 
 def create_ad_from_form(sender: str, data: dict):

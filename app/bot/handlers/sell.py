@@ -2,14 +2,21 @@ from __future__ import annotations
 
 import logging
 
+import re
+from pathlib import Path
+
+from typing import Dict
+
 from whatsapp_chatbot_python import Notification
 
 from ...config import Settings
-from ..services.state import ensure_user, get_ads_preview
+from ..services.state import ensure_user, get_ads_preview, get_ad_with_images
 from ..services.forms import sell_form_manager
 from ..ui.buttons import SELL_MENU_BUTTONS, SELL_TEXT_TO_BUTTON
 
 logger = logging.getLogger("app.bot.handlers.sell")
+
+_LAST_SUMMARIES: Dict[str, list[int]] = {}
 
 
 def send_sell_menu(notification: Notification, sender: str) -> None:
@@ -46,6 +53,10 @@ def handle_sell_button(notification: Notification, settings: Settings, sender: s
 
 def handle_sell_text(notification: Notification, settings: Settings, sender: str, text: str) -> bool:
     """Обработать текстовые команды, относящиеся к продаже."""
+    detail_id = _extract_detail_request(sender, text)
+    if detail_id is not None:
+        _send_ad_detail(notification, sender, detail_id)
+        return True
     key = SELL_TEXT_TO_BUTTON.get(text.strip().lower())
     if not key:
         return False
@@ -54,15 +65,67 @@ def handle_sell_text(notification: Notification, settings: Settings, sender: str
 
 
 def _sell_list_text(sender: str) -> str:
-    total, active, ads = get_ads_preview(sender)
+    """Подготовить текст списка объявлений и запомнить порядок."""
+    total, active, summary = get_ads_preview(sender)
     if total == 0:
         return "У тебя пока нет объявлений. Нажми «Разместить объявление», чтобы добавить первое."
+    _LAST_SUMMARIES[sender] = [item["id"] for item in summary]
     lines = [f"Твои объявления: {total} шт. (активных {active})."]
-    for idx, ad in enumerate(ads, start=1):
-        title = getattr(ad, "title", None) or f"Объявление #{ad.id}"
-        price = getattr(ad, "price", 0)
-        status = "активно" if getattr(ad, "is_active", False) else "в обработке"
-        lines.append(f"{idx}. {title} — {price} ₽ ({status}) ID#{ad.id}")
-    if total > len(ads):
-        lines.append("…Показаны последние объявления. Ответь номером или ID — скоро добавим переход.")
+    for idx, item in enumerate(summary, start=1):
+        lines.append(
+            f"{idx}. {item['title']} — {item['price']} ₽ ({item['status']}) ID#{item['id']}"
+        )
+    if total > len(summary):
+        lines.append("…Показаны последние объявления. Напиши цифру из списка или ID#, чтобы открыть карточку.")
+    else:
+        lines.append("Просто напиши цифру (например 1) или ID# объявления, чтобы получить детали и фото.")
     return "\n".join(lines)
+
+
+def _extract_detail_request(sender: str, text: str) -> int | None:
+    """Извлечь ID объявления по команде (номер, ID, короткая форма)."""
+    cleaned = text.strip().lower()
+    if cleaned.startswith("id"):
+        digits = re.findall(r"\d+", cleaned)
+        if digits:
+            return int(digits[0])
+        return None
+    if cleaned.startswith("объявление"):
+        digits = re.findall(r"\d+", cleaned)
+        if digits:
+            return _resolve_index(sender, int(digits[0]))
+        return None
+    # если просто цифра
+    if cleaned.isdigit():
+        return _resolve_index(sender, int(cleaned))
+    return None
+
+
+def _resolve_index(sender: str, idx: int) -> int | None:
+    current = _LAST_SUMMARIES.get(sender)
+    if not current or idx < 1 or idx > len(current):
+        return None
+    return current[idx - 1]
+
+
+def _send_ad_detail(notification: Notification, sender: str, ad_id: int) -> None:
+    """Отправить карточку объявления и первое фото."""
+    ad, images = get_ad_with_images(sender, ad_id)
+    if not ad:
+        notification.answer("Не нашёл объявление с таким номером.")
+        return
+    lines = [
+        f"Объявление #{ad.id}",
+        ad.title or "Без названия",
+        f"Статус: {'активно' if ad.is_active else 'в обработке'}",
+        f"Цена: {ad.price or 0} ₽",
+        f"Год: {ad.year_car} | Пробег: {ad.mileage_km_car} км",
+        f"VIN: {ad.vin_number}",
+        "Описание:",
+        (ad.description or "-"),
+    ]
+    notification.answer("\n".join(lines))
+    if images:
+        first = Path(images[0].image_url)
+        if first.exists():
+            notification.answer_with_file(str(first), caption="Главное фото")

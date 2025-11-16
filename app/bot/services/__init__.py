@@ -4,6 +4,7 @@ from .state import (
     get_balance,
     get_user,
     get_ads_preview,
+    get_ad_with_images,
     init_background_loop,
     create_ad_from_form,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "get_balance",
     "get_user",
     "get_ads_preview",
+    "get_ad_with_images",
     "create_ad_from_form",
     "init_background_loop",
     "sell_form_manager",

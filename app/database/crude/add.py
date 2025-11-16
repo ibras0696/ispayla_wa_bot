@@ -187,6 +187,12 @@ class CrudeAdd:
             result = await session.execute(select(Ad).where(Ad.sender == sender))
             return result.scalars().all()
 
+    async def get_by_id(self, ad_id: int) -> Ad | None:
+        """Получить объявление по ID."""
+        async with self.session() as session:
+            result = await session.execute(select(Ad).where(Ad.id == ad_id))
+            return result.scalar_one_or_none()
+
     # Фильтрация по: Марке, Цене, Году, Пробегу
     async def filter_ads(self,
                          car_brand_id: int | None = None,  # ID марки автомобиля
