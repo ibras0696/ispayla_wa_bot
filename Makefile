@@ -6,7 +6,7 @@ PIP := $(VENV_DIR)/bin/pip
 PYTHON_BIN := $(VENV_DIR)/bin/python
 VENV_SENTINEL := $(VENV_DIR)/.installed
 
-.PHONY: help install bot lint test up down bot-shell db-shell logs
+.PHONY: help install bot lint test up upb down downv bot-shell db-shell logs restart
 
 help:
 	@echo "Доступные команды:"
@@ -41,7 +41,11 @@ test: $(VENV_SENTINEL)
 	$(VENV_DIR)/bin/pytest
 
 up:
-	@echo "[compose] docker compose up --build"
+	@echo "[compose] docker compose up"
+	docker compose up -d
+
+upb:
+	@echo "[compose] docker compose up"
 	docker compose up -d --build
 
 down:
@@ -51,6 +55,10 @@ down:
 downv:
 	@echo "[compose] docker compose down -v"
 	docker compose down -v
+
+rebuild:
+	@echo "[compose] docker compose up --build"
+	docker compose up -d --build
 
 bot-shell:
 	@echo "[compose] Подключаюсь к контейнеру bot"
@@ -63,3 +71,4 @@ db-shell:
 logs:
 	@echo "[compose] docker compose logs -f bot"
 	docker compose logs -f bot
+restart: downv upb logs

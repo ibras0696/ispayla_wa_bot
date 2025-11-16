@@ -1,0 +1,23 @@
+{
+  "typeWebhook": "outgoingMessageReceived",
+  "instanceData": {
+    "idInstance": 1105378284,
+    "wid": "79323056361@c.us",
+    "typeInstance": "whatsapp"
+  },
+  "timestamp": 1763289869,
+  "idMessage": "3A7C521CAF3DB92E21B0",
+  "senderData": {
+    "chatId": "79323056361@c.us",
+    "chatName": "Ибрагим Гатаев",
+    "sender": "79323056361@c.us",
+    "senderName": "Ибрагим Гатаев",
+    "senderContactName": "Ибрагим Гатаев"
+  },
+  "messageData": {
+    "typeMessage": "textMessage",
+    "textMessageData": {
+      "textMessage": "Привет"
+    }
+  }
+}

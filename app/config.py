@@ -22,6 +22,7 @@ class Settings:
     base_url: str = DEFAULT_BASE_URL
     webhook_secret: str | None = None
     auto_reply_text: str = DEFAULT_AUTO_REPLY_TEXT
+    allowed_senders: set[str] | None = None
 
 
 @lru_cache(1)
@@ -37,10 +38,16 @@ def get_settings() -> Settings:
     if not id_instance or not api_token:
         raise RuntimeError("ID_INSTANCE и API_TOKEN обязательны для работы Green API клиента.")
 
+    allowed_raw = os.getenv("ALLOWED_SENDERS")
+    allowed_senders = None
+    if allowed_raw:
+        allowed_senders = {chunk.strip() for chunk in allowed_raw.split(",") if chunk.strip()}
+
     return Settings(
         id_instance=id_instance,
         api_token=api_token,
         base_url=os.getenv("GREEN_API_BASE_URL", DEFAULT_BASE_URL),
         webhook_secret=os.getenv("WEBHOOK_SECRET"),
         auto_reply_text=os.getenv("AUTO_REPLY_TEXT", DEFAULT_AUTO_REPLY_TEXT),
+        allowed_senders=allowed_senders,
     )

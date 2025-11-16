@@ -1,0 +1,22 @@
+{
+  "typeWebhook": "incomingMessageReceived",
+  "instanceData": {
+    "idInstance": 1105378284,
+    "wid": "79323056361@c.us",
+    "typeInstance": "whatsapp"
+  },
+  "timestamp": 1763289905,
+  "idMessage": "BAE5F4CBD39B1823",
+  "senderData": {
+    "chatId": "79991234567@c.us",
+    "sender": "79991234567@c.us",
+    "senderName": "Николай",
+    "senderContactName": "Николай Клиент"
+  },
+  "messageData": {
+    "typeMessage": "textMessage",
+    "textMessageData": {
+      "textMessage": "Добрый день! Хочу разместить объявление."
+    }
+  }
+}
