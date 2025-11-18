@@ -74,4 +74,4 @@ logs:
 
 restart: down up logs
 
-restart_full: downv upb logs
+restart-full: downv upb logs

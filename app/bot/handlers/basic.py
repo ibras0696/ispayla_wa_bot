@@ -8,6 +8,8 @@ from ...config import Settings
 from ..services.guard import guard_sender, chat_sender
 from ..services.state import ensure_user, get_balance
 from ..services.forms import sell_form_manager
+from .sell import handle_sell_text
+from .buy import handle_buy_text
 
 logger = logging.getLogger("app.bot.handlers.basic")
 
@@ -65,6 +67,11 @@ def handle_fallback(notification: Notification, settings: Settings, allowed: set
         if reply:
             notification.answer(reply)
         return
+    if incoming:
+        if handle_sell_text(notification, settings, sender, incoming):
+            return
+        if handle_buy_text(notification, settings, sender, incoming):
+            return
     logger.info("Получено сообщение от %s: %s", sender, incoming)
     if settings.auto_reply_text and settings.auto_reply_text.strip():
         notification.answer(settings.auto_reply_text)

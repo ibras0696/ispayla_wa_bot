@@ -103,9 +103,10 @@ def _extract_detail_request(sender: str, text: str) -> int | None:
 
 def _resolve_index(sender: str, idx: int) -> int | None:
     current = _LAST_SUMMARIES.get(sender)
-    if not current or idx < 1 or idx > len(current):
-        return None
-    return current[idx - 1]
+    if current and 1 <= idx <= len(current):
+        return current[idx - 1]
+    # если нет кэша со списком, пробуем трактовать цифру как прямой ID
+    return idx if idx > 0 else None
 
 
 def _send_ad_detail(notification: Notification, sender: str, ad_id: int) -> None:
