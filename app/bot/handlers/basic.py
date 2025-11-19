@@ -8,6 +8,7 @@ from ...config import Settings
 from ..services.guard import guard_sender, chat_sender
 from ..services.state import ensure_user, get_balance
 from ..services.forms import sell_form_manager
+from ..ui.texts import START_TEXT
 from .sell import handle_sell_text
 from .buy import handle_buy_text
 
@@ -30,10 +31,7 @@ def handle_start(notification: Notification, settings: Settings, allowed: set[st
     if not guard_sender(notification, allowed):
         return
     ensure_user(chat_sender(notification), notification.event.get("senderData", {}).get("senderName"))
-    notification.answer(
-        "Привет! Это базовый бот на Green API. "
-        "Напишите `баланс`, чтобы увидеть тестовые данные."
-    )
+    notification.answer(START_TEXT)
 
 
 def handle_balance(notification: Notification, settings: Settings, allowed: set[str] | None) -> None:

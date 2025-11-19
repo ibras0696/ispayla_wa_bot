@@ -6,6 +6,12 @@ MAIN_MENU_BUTTONS = [
     {"buttonId": "buy", "buttonText": "Покупка"},
 ]
 
+BUY_MENU_BUTTONS = [
+    {"buttonId": "buy_all", "buttonText": "Все объявления"},
+    {"buttonId": "buy_filter", "buttonText": "Фильтр поиска"},
+    {"buttonId": "buy_favorites", "buttonText": "Избранное"},
+]
+
 SELL_MENU_BUTTONS = [
     {"buttonId": "sell_create", "buttonText": "Разместить объявление"},
     {"buttonId": "sell_list", "buttonText": "Мои объявления"},
@@ -25,4 +31,13 @@ SELL_TEXT_TO_BUTTON = {
     "мои объявления": "sell_list",
     "sell_create": "sell_create",
     "sell_list": "sell_list",
+}
+
+BUY_TEXT_TO_BUTTON = {
+    "все объявления": "buy_all",
+    "фильтр поиска": "buy_filter",
+    "избранное": "buy_favorites",
+    "buy_all": "buy_all",
+    "buy_filter": "buy_filter",
+    "buy_favorites": "buy_favorites",
 }

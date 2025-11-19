@@ -8,9 +8,10 @@ from ...config import Settings
 from ..services.guard import guard_sender, chat_sender
 from ..services.state import ensure_user
 from ..ui.buttons import MAIN_MENU_BUTTONS, TEXT_TO_BUTTON
+from ..ui.texts import MAIN_MENU_TEXT
 from .profile import build_profile_text
 from .sell import send_sell_menu, handle_sell_button, handle_sell_text
-from .buy import handle_buy_option, handle_buy_text
+from .buy import handle_buy_button, handle_buy_text
 
 logger = logging.getLogger("app.bot.handlers.menu")
 
@@ -26,9 +27,7 @@ def handle_main_menu(notification: Notification, settings: Settings, allowed: se
         return
     payload = {
         "chatId": chat_id,
-        "body": "Выберите действие:",
-        "header": "Меню действий",
-        "footer": "Выберите одну из опций",
+        **MAIN_MENU_TEXT,
         "buttons": MAIN_MENU_BUTTONS,
     }
     notification.api.request(
@@ -85,4 +84,6 @@ def _dispatch_button(notification: Notification, settings: Settings, button_id: 
     elif button_id.startswith("sell") or button_id == "sell":
         handle_sell_button(notification, settings, sender, button_id)
     elif button_id == "buy":
-        handle_buy_option(notification, settings, sender, button_id)
+        handle_buy_button(notification, settings, sender, button_id)
+    elif button_id.startswith("buy_"):
+        handle_buy_button(notification, settings, sender, button_id)

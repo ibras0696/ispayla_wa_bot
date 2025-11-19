@@ -13,6 +13,7 @@ from ...config import Settings
 from ..services.state import ensure_user, get_ads_preview, get_ad_with_images
 from ..services.forms import sell_form_manager
 from ..ui.buttons import SELL_MENU_BUTTONS, SELL_TEXT_TO_BUTTON
+from ..ui.texts import SELL_MENU_TEXT
 
 logger = logging.getLogger("app.bot.handlers.sell")
 
@@ -26,9 +27,7 @@ def send_sell_menu(notification: Notification, sender: str) -> None:
         return
     payload = {
         "chatId": chat_id,
-        "body": "Продажа авто",
-        "header": "Продажа",
-        "footer": "Выберите действие",
+        **SELL_MENU_TEXT,
         "buttons": SELL_MENU_BUTTONS,
     }
     notification.api.request(
