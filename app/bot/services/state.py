@@ -9,11 +9,11 @@ from ...database.db import init_db
 
 
 class DBRunner:
-    """
-    Helper для выполнения корутин в выделенном event loop.
+    """Выполняет async-корутины в отдельном event loop.
 
-    SQLAlchemy async engine не любит, когда event loop постоянно создаётся/закрывается,
-    поэтому держим отдельный поток и гоняем все операции через него.
+    SQLAlchemy async engine не любит постоянное создание/закрытие event loop,
+    поэтому этот helper живёт в отдельном потоке и принимает задачи через
+    `run`, возвращая результат синхронно.
     """
 
     def __init__(self) -> None:
@@ -32,24 +32,28 @@ db_runner = DBRunner()
 
 
 def init_background_loop() -> None:
-    """Создать таблицы при старте приложения (алембик пока не подключен)."""
+    """Создать таблицы и подготовить event loop при старте приложения."""
     db_runner.run(init_db())
 
 
 async def _ensure_user(sender: str, username: str | None) -> None:
+    """Асинхронно создать пользователя, если он ещё не существует."""
     await crud_manager.user.add(sender=sender, username=username)
 
 
 async def _get_balance(sender: str) -> int:
+    """Асинхронно получить баланс пользователя."""
     user = await crud_manager.user.get_by_sender(sender)
     return user.balance if user else 0
 
 
 async def _get_user(sender: str):
+    """Асинхронно вернуть объект пользователя или None."""
     return await crud_manager.user.get_by_sender(sender)
 
 
 async def _get_ads_preview(sender: str, limit: int = 5):
+    """Получить статистику по объявлениям конкретного пользователя."""
     ads = await crud_manager.ad.get_by_sender(sender)
     total = len(ads)
     active = sum(1 for ad in ads if getattr(ad, "is_active", False))
@@ -70,11 +74,37 @@ async def _get_ads_preview(sender: str, limit: int = 5):
     return total, active, summary
 
 
+async def _get_recent_public_ads(limit: int = 5):
+    """Получить несколько последних активных объявлений для витрины."""
+    ads = await crud_manager.ad.get_recent_active(limit)
+    ad_ids = [ad.id for ad in ads]
+    images_map = await crud_manager.car_image.get_map_by_ad_ids(ad_ids)
+    summary: list[dict] = []
+    for ad in ads:
+        imgs = images_map.get(ad.id) or []
+        summary.append(
+            {
+                "id": ad.id,
+                "title": ad.title,
+                "price": ad.price,
+                "year": ad.year_car,
+                "mileage": ad.mileage_km_car,
+                "brand_id": ad.car_brand_id,
+                "status": "активно" if ad.is_active else "в обработке",
+                "photo": imgs[0].image_url if imgs else None,
+                "sender": ad.sender,
+            }
+        )
+    return summary
+
+
 async def _get_brand_by_name(name: str):
+    """Найти марку авто по названию."""
     return await crud_manager.car_brand.get_by_name(name)
 
 
 async def _ensure_brand(name: str):
+    """Создать марку авто, если она ещё не сохранена."""
     brand = await _get_brand_by_name(name)
     if brand:
         return brand
@@ -88,6 +118,7 @@ async def _ensure_brand(name: str):
 
 
 async def _create_ad_from_form(sender: str, data: dict):
+    """Создать объявление и сохранить фотографии из формы."""
     brand = await _ensure_brand(data["brand"])
     ad = await crud_manager.ad.add(
         sender=sender,
@@ -127,7 +158,13 @@ def get_ads_preview(sender: str, limit: int = 5):
     return db_runner.run(_get_ads_preview(sender, limit))
 
 
+def get_recent_public_ads(limit: int = 5):
+    """Вернуть последние активные объявления без привязки к пользователю."""
+    return db_runner.run(_get_recent_public_ads(limit))
+
+
 async def _get_ad_with_images(sender: str, ad_id: int):
+    """Получить объявление и его фотографии, если sender совпадает."""
     ad = await crud_manager.ad.get_by_id(ad_id)
     if not ad or ad.sender != sender:
         return None, []

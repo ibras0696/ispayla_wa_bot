@@ -176,6 +176,22 @@ class CrudeAdd:
             result = await session.execute(select(Ad).where(Ad.is_active.is_(True)))
             return result.scalars().all()
 
+    async def get_recent_active(self, limit: int = 5) -> list[Ad]:
+        """
+        Получить несколько последних активных объявлений.
+
+        :param limit: Сколько записей возвращать.
+        """
+        async with self.session() as session:
+            stmt = (
+                select(Ad)
+                .where(Ad.is_active.is_(True))
+                .order_by(Ad.created_at.desc())
+                .limit(limit)
+            )
+            result = await session.execute(stmt)
+            return result.scalars().all()
+
     # Получение объявления конкретного пользователя по sender
     async def get_by_sender(self, sender: str) -> list[Ad]:
         """
