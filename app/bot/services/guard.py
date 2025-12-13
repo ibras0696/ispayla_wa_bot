@@ -43,5 +43,5 @@ def guard_sender(notification: Notification, allowed: set[str] | None) -> bool:
         return False
     if is_sender_allowed(sender, allowed):
         return True
-    logger.info("Игнорируем сообщение от %s — вне списка ALLOWED_SENDERS.", sender)
+    logger.info("Игнорируем сообщение от %s — вне списка ALLOWED_SENDERS=%s.", sender, allowed)
     return False

@@ -66,7 +66,8 @@ def handle_menu_text(notification: Notification, settings: Settings, allowed: se
     sender = chat_sender(notification)
     ensure_user(sender, notification.event.get("senderData", {}).get("senderName"))
 
-    key = TEXT_TO_BUTTON.get(text.strip().lower())
+    normalized = text.strip().lower()
+    key = TEXT_TO_BUTTON.get(normalized)
     if key:
         _dispatch_button(notification, settings, key)
         return

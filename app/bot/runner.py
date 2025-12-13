@@ -1,3 +1,5 @@
+"""Регистрация обработчиков и запуск Green API-бота."""
+
 from __future__ import annotations
 
 import logging
@@ -17,20 +19,32 @@ from .services.state import init_background_loop
 
 
 def create_bot(settings: Settings | None = None) -> GreenAPIBot:
+    """
+    Создаёт и настраивает экземпляр `GreenAPIBot`, подключая все хендлеры.
+
+    :param settings: Предварительно загруженные настройки. Если не переданы —
+        будут считаны из окружения через ``get_settings``.
+    :return: Готовый к работе бот, который остаётся лишь запустить через
+        ``run_forever``.
+    """
     settings = settings or get_settings()
     init_background_loop()
 
     bot = GreenAPIBot(
         settings.id_instance,
         settings.api_token,
+        host=settings.base_url,
         bot_debug_mode=True,
     )
 
     allowed = settings.allowed_senders
 
     def wrap(handler):
+        """Пробрасывает в каждый хендлер общие настройки и whitelist отправителей."""
+
         def _inner(notification):
             return handler(notification, settings, allowed)
+
         return _inner
 
     bot.router.message(command="start")(wrap(handle_start))
@@ -47,7 +61,17 @@ def create_bot(settings: Settings | None = None) -> GreenAPIBot:
     bot.router.message(type_message=["buttonsResponseMessage", "templateButtonsReplyMessage", "interactiveButtonsResponse"])(wrap(handle_menu_selection))
     bot.router.outgoing_message(type_message=["buttonsResponseMessage", "templateButtonsReplyMessage", "interactiveButtonsResponse"])(wrap(handle_menu_selection))
 
-    menu_text_triggers = ["профиль", "profile", "продажа", "sell", "покупка", "buy"]
+    menu_text_triggers = [
+        "профиль",
+        "Профиль",
+        "profile",
+        "продажа",
+        "Продажа",
+        "sell",
+        "покупка",
+        "Покупка",
+        "buy",
+    ]
     bot.router.message(text_message=menu_text_triggers)(wrap(handle_menu_text))
     bot.router.outgoing_message(text_message=menu_text_triggers)(wrap(handle_menu_text))
 

@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.future import select
-from sqlalchemy import update, delete
+from sqlalchemy import update, delete, func
 
 from ..models import Ad, Moderation
 
@@ -192,6 +192,33 @@ class CrudeAdd:
             result = await session.execute(stmt)
             return result.scalars().all()
 
+    async def count_active(self) -> int:
+        """Вернуть общее количество активных объявлений."""
+        async with self.session() as session:
+            result = await session.execute(select(func.count()).where(Ad.is_active.is_(True)))
+            return result.scalar_one() or 0
+
+    async def get_active_by_id(self, ad_id: int) -> Ad | None:
+        """Получить активное объявление по ID (для публичного просмотра)."""
+        async with self.session() as session:
+            result = await session.execute(
+                select(Ad).where(Ad.id == ad_id, Ad.is_active.is_(True))
+            )
+            return result.scalar_one_or_none()
+
+    async def search_by_title(self, query: str, limit: int = 5) -> list[Ad]:
+        """Поиск активных объявлений по подстроке в названии."""
+        async with self.session() as session:
+            stmt = (
+                select(Ad)
+                .where(Ad.is_active.is_(True))
+                .where(Ad.title.ilike(f"%{query}%"))
+                .order_by(Ad.created_at.desc())
+                .limit(limit)
+            )
+            result = await session.execute(stmt)
+            return result.scalars().all()
+
     # Получение объявления конкретного пользователя по sender
     async def get_by_sender(self, sender: str) -> list[Ad]:
         """
@@ -210,14 +237,21 @@ class CrudeAdd:
             return result.scalar_one_or_none()
 
     # Фильтрация по: Марке, Цене, Году, Пробегу
-    async def filter_ads(self,
-                         car_brand_id: int | None = None,  # ID марки автомобиля
-                         min_price: int | None = None,  # Минимальная цена
-                         max_price: int | None = None,  # Максимальная цена
-                         year_car: int | None = None,  # Год выпуска автомобиля
-                         min_mileage: int | None = None,  # Минимальный пробег в км
-                         max_mileage: int | None = None  # Максимальный пробег в км
-                         ) -> list[Ad]:
+    async def filter_ads(
+        self,
+        car_brand_id: int | None = None,  # ID марки автомобиля
+        min_price: int | None = None,  # Минимальная цена
+        max_price: int | None = None,  # Максимальная цена
+        year_car: int | None = None,  # Год выпуска автомобиля
+        min_year_car: int | None = None,
+        max_year_car: int | None = None,
+        min_mileage: int | None = None,  # Минимальный пробег в км
+        max_mileage: int | None = None,  # Максимальный пробег в км
+        *,
+        is_active: bool = True,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> list[Ad]:
         """
         Фильтрация объявлений по различным параметрам.
         :param car_brand_id: ID марки автомобиля (необязательно)
@@ -230,6 +264,8 @@ class CrudeAdd:
         """
         async with self.session() as session:
             query = select(Ad)
+            if is_active:
+                query = query.where(Ad.is_active.is_(True))
 
             # Добавляем условия фильтрации
             if car_brand_id is not None:
@@ -240,11 +276,69 @@ class CrudeAdd:
                 query = query.where(Ad.price <= max_price)
             if year_car is not None:
                 query = query.where(Ad.year_car == year_car)
+            if min_year_car is not None:
+                query = query.where(Ad.year_car >= min_year_car)
+            if max_year_car is not None:
+                query = query.where(Ad.year_car <= max_year_car)
             if min_mileage is not None:
                 query = query.where(Ad.mileage_km_car >= min_mileage)
             if max_mileage is not None:
                 query = query.where(Ad.mileage_km_car <= max_mileage)
 
+            query = query.order_by(Ad.created_at.desc())
+            if limit is not None:
+                query = query.limit(limit)
+            if offset is not None:
+                query = query.offset(offset)
+
+            result = await session.execute(query)
+            return result.scalars().all()
+
+    async def count_filtered_ads(
+        self,
+        car_brand_id: int | None = None,
+        min_price: int | None = None,
+        max_price: int | None = None,
+        year_car: int | None = None,
+        min_year_car: int | None = None,
+        max_year_car: int | None = None,
+        min_mileage: int | None = None,
+        max_mileage: int | None = None,
+        *,
+        is_active: bool = True,
+    ) -> int:
+        """Подсчитать количество объявлений по фильтрам."""
+        async with self.session() as session:
+            query = select(func.count())
+            if is_active:
+                query = query.where(Ad.is_active.is_(True))
+            if car_brand_id is not None:
+                query = query.where(Ad.car_brand_id == car_brand_id)
+            if min_price is not None:
+                query = query.where(Ad.price >= min_price)
+            if max_price is not None:
+                query = query.where(Ad.price <= max_price)
+            if year_car is not None:
+                query = query.where(Ad.year_car == year_car)
+            if min_year_car is not None:
+                query = query.where(Ad.year_car >= min_year_car)
+            if max_year_car is not None:
+                query = query.where(Ad.year_car <= max_year_car)
+            if min_mileage is not None:
+                query = query.where(Ad.mileage_km_car >= min_mileage)
+            if max_mileage is not None:
+                query = query.where(Ad.mileage_km_car <= max_mileage)
+            result = await session.execute(query)
+            return result.scalar_one() or 0
+
+    async def get_by_ids(self, ids: list[int], *, is_active: bool | None = None) -> list[Ad]:
+        """Получить объявления по списку ID (с опцией фильтра по активности)."""
+        if not ids:
+            return []
+        async with self.session() as session:
+            query = select(Ad).where(Ad.id.in_(ids))
+            if is_active is True:
+                query = query.where(Ad.is_active.is_(True))
             result = await session.execute(query)
             return result.scalars().all()
 

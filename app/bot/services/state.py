@@ -98,6 +98,58 @@ async def _get_recent_public_ads(limit: int = 5):
     return summary
 
 
+async def _filter_public_ads(filters: dict, page: int = 0, page_size: int = 5):
+    """Получить срез отфильтрованных активных объявлений с пагинацией."""
+    offset = page * page_size
+    ads = await crud_manager.ad.filter_ads(
+        car_brand_id=filters.get("car_brand_id"),
+        min_price=filters.get("min_price"),
+        max_price=filters.get("max_price"),
+        year_car=filters.get("year"),
+        min_year_car=filters.get("min_year"),
+        max_year_car=filters.get("max_year"),
+        min_mileage=filters.get("min_mileage"),
+        max_mileage=filters.get("max_mileage"),
+        is_active=True,
+        limit=page_size,
+        offset=offset,
+    )
+    ad_ids = [ad.id for ad in ads]
+    images_map = await crud_manager.car_image.get_map_by_ad_ids(ad_ids)
+    summary: list[dict] = []
+    for ad in ads:
+        imgs = images_map.get(ad.id) or []
+        summary.append(
+            {
+                "id": ad.id,
+                "title": ad.title,
+                "price": ad.price,
+                "year": ad.year_car,
+                "mileage": ad.mileage_km_car,
+                "brand_id": ad.car_brand_id,
+                "status": "активно" if ad.is_active else "в обработке",
+                "photo": imgs[0].image_url if imgs else None,
+                "sender": ad.sender,
+            }
+        )
+    return summary
+
+
+async def _count_filtered_public_ads(filters: dict) -> int:
+    """Подсчитать количество объявлений под фильтры."""
+    return await crud_manager.ad.count_filtered_ads(
+        car_brand_id=filters.get("car_brand_id"),
+        min_price=filters.get("min_price"),
+        max_price=filters.get("max_price"),
+        year_car=filters.get("year"),
+        min_year_car=filters.get("min_year"),
+        max_year_car=filters.get("max_year"),
+        min_mileage=filters.get("min_mileage"),
+        max_mileage=filters.get("max_mileage"),
+        is_active=True,
+    )
+
+
 async def _get_brand_by_name(name: str):
     """Найти марку авто по названию."""
     return await crud_manager.car_brand.get_by_name(name)
@@ -163,6 +215,73 @@ def get_recent_public_ads(limit: int = 5):
     return db_runner.run(_get_recent_public_ads(limit))
 
 
+def filter_public_ads(filters: dict, page: int = 0, page_size: int = 5):
+    """Отфильтрованные объявления (публично) с пагинацией."""
+    return db_runner.run(_filter_public_ads(filters, page, page_size))
+
+
+def count_filtered_public_ads(filters: dict) -> int:
+    """Сколько объявлений подходит под фильтр."""
+    return db_runner.run(_count_filtered_public_ads(filters))
+
+
+async def _count_public_ads() -> int:
+    """Вернуть число активных объявлений (публичная витрина)."""
+    return await crud_manager.ad.count_active()
+
+
+async def _get_public_ad(ad_id: int):
+    """Получить одно активное объявление по ID (без фильтра по sender)."""
+    ad = await crud_manager.ad.get_active_by_id(ad_id)
+    if not ad:
+        return None
+    return {
+        "id": ad.id,
+        "title": ad.title,
+        "price": ad.price,
+        "year": ad.year_car,
+        "mileage": ad.mileage_km_car,
+        "brand_id": ad.car_brand_id,
+        "status": "активно" if ad.is_active else "в обработке",
+        "sender": ad.sender,
+    }
+
+
+async def _search_public_ads(query: str, limit: int = 5):
+    """Поиск активных объявлений по заголовку (ILIKE %query%)."""
+    ads = await crud_manager.ad.search_by_title(query, limit)
+    summary: list[dict] = []
+    for ad in ads:
+        summary.append(
+            {
+                "id": ad.id,
+                "title": ad.title,
+                "price": ad.price,
+                "year": ad.year_car,
+                "mileage": ad.mileage_km_car,
+                "brand_id": ad.car_brand_id,
+                "status": "активно" if ad.is_active else "в обработке",
+                "sender": ad.sender,
+            }
+        )
+    return summary
+
+
+def count_public_ads() -> int:
+    """Число активных объявлений."""
+    return db_runner.run(_count_public_ads())
+
+
+def get_public_ad(ad_id: int):
+    """Одно объявление по ID (если активно)."""
+    return db_runner.run(_get_public_ad(ad_id))
+
+
+def search_public_ads(query: str, limit: int = 5):
+    """Поиск активных объявлений по названию (ILIKE)."""
+    return db_runner.run(_search_public_ads(query, limit))
+
+
 async def _get_ad_with_images(sender: str, ad_id: int):
     """Получить объявление и его фотографии, если sender совпадает."""
     ad = await crud_manager.ad.get_by_id(ad_id)
@@ -180,3 +299,45 @@ def get_ad_with_images(sender: str, ad_id: int):
 def create_ad_from_form(sender: str, data: dict):
     """Создать объявление на основе заполненной формы."""
     return db_runner.run(_create_ad_from_form(sender, data))
+
+
+async def _get_ads_by_ids(ids: list[int], active_only: bool = True):
+    """Асинхронно получить объявления по списку ID."""
+    return await crud_manager.ad.get_by_ids(ids, is_active=active_only)
+
+
+async def _add_favorite(sender: str, ad_id: int):
+    """Добавить объявление в избранное."""
+    return await crud_manager.favorite.add(sender=sender, ad_id=ad_id)
+
+
+async def _remove_favorite(sender: str, ad_id: int):
+    """Удалить объявление из избранного."""
+    return await crud_manager.favorite.delete(sender=sender, ad_id=ad_id)
+
+
+async def _get_favorites(sender: str):
+    """Получить избранные объявления пользователя (активные)."""
+    favs = await crud_manager.favorite.get_by_sender(sender)
+    ids = [fav.ad_id for fav in favs]
+    return await _get_ads_by_ids(ids, active_only=True)
+
+
+def get_brand_by_name(name: str):
+    """Синхронно получить бренд по имени."""
+    return db_runner.run(_get_brand_by_name(name))
+
+
+def add_favorite(sender: str, ad_id: int):
+    """Синхронно добавить объявление в избранное."""
+    return db_runner.run(_add_favorite(sender, ad_id))
+
+
+def remove_favorite(sender: str, ad_id: int):
+    """Синхронно удалить объявление из избранного."""
+    return db_runner.run(_remove_favorite(sender, ad_id))
+
+
+def get_favorites(sender: str):
+    """Синхронно получить активные объявления из избранного отправителя."""
+    return db_runner.run(_get_favorites(sender))

@@ -1,3 +1,5 @@
+"""Базовые обработчики: /start, баланс и fallback-сценарии."""
+
 from __future__ import annotations
 
 import logging
@@ -16,6 +18,12 @@ logger = logging.getLogger("app.bot.handlers.basic")
 
 
 def _message_text(notification: Notification) -> str:
+    """
+    Возвращает текст сообщения вне зависимости от типа payload'а Green API.
+
+    Приходит либо ``textMessageData``, либо ``extendedTextMessageData`` —
+    последовательно проверяем оба варианта и подстраховываемся пустой строкой.
+    """
     message_data = notification.event.get("messageData", {})
     text_data = message_data.get("textMessageData")
     if text_data and text_data.get("textMessage"):
@@ -35,7 +43,11 @@ def handle_start(notification: Notification, settings: Settings, allowed: set[st
 
 
 def handle_balance(notification: Notification, settings: Settings, allowed: set[str] | None) -> None:
-    """Вывести баланс пользователя."""
+    """
+    Возвращает баланс отправителя, предварительно удостоверившись, что он зарегистрирован.
+
+    Для whitelisted пользователя создаёт запись, если её не было, и отвечает суммой в условных единицах.
+    """
     if not guard_sender(notification, allowed):
         return
     sender = chat_sender(notification)
@@ -45,7 +57,12 @@ def handle_balance(notification: Notification, settings: Settings, allowed: set[
 
 
 def handle_fallback(notification: Notification, settings: Settings, allowed: set[str] | None) -> None:
-    """Ловит все остальные сообщения и проксирует в мастер продажи."""
+    """
+    Универсальный обработчик, который поддерживает мастер продажи и пытается распознать произвольный текст.
+
+    Здесь же происходит загрузка медиа, продолжение сценария продажи, попытка запусков `handle_sell_text` /
+    `handle_buy_text` и автосообщение, если ничего не подошло.
+    """
     if not guard_sender(notification, allowed):
         return
     if notification.event.get("typeWebhook") not in {"incomingMessageReceived", "outgoingMessageReceived"}:

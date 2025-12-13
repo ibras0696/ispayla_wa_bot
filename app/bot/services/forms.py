@@ -14,6 +14,7 @@ from .state import create_ad_from_form
 CANCEL_WORDS = {"отмена", "cancel", "стоп", "stop"}
 MEDIA_MESSAGE_TYPES = {"imageMessage", "documentMessage"}
 MAX_PHOTOS = 3
+POSTGRES_INT_MAX = 2_147_483_647
 
 logger = logging.getLogger("app.bot.forms")
 
@@ -141,13 +142,15 @@ def _validate_text(value: str, field_name: str, min_length: int = 3) -> str:
 
 
 def _validate_price(value: str) -> int:
-    """Преобразовать цену в int и проверить положительность."""
+    """Преобразовать цену в int и проверить допустимый диапазон."""
     try:
         price = int(value.replace(" ", ""))
     except ValueError:
         raise ValueError("Цена должна быть числом")
     if price <= 0:
         raise ValueError("Цена должна быть больше 0")
+    if price > POSTGRES_INT_MAX:
+        raise ValueError("Цена должна быть меньше или равна 2 147 483 647.")
     return price
 
 
@@ -171,6 +174,8 @@ def _validate_mileage(value: str) -> int:
         raise ValueError("Пробег должен быть числом")
     if mileage < 0:
         raise ValueError("Пробег не может быть отрицательным")
+    if mileage > POSTGRES_INT_MAX:
+        raise ValueError("Mileage must be less than or equal to 2 147 483 647 km.")
     return mileage
 
 
