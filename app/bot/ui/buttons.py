@@ -13,6 +13,12 @@ BUY_MENU_BUTTONS = [
     {"buttonId": "buy_favorites", "buttonText": "Избранное"},
 ]
 
+BUY_NAV_BUTTONS = [
+    {"buttonId": "buy_prev", "buttonText": "⬅️ Назад"},
+    {"buttonId": "buy_next", "buttonText": "➡️ Дальше"},
+    {"buttonId": "buy_refresh", "buttonText": "Обновить"},
+]
+
 SELL_MENU_BUTTONS = [
     {"buttonId": "sell_create", "buttonText": "Разместить объявление"},
     {"buttonId": "sell_list", "buttonText": "Мои объявления"},

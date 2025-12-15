@@ -194,3 +194,4 @@ cython_debug/
 # Тестовый модуль
 test.py
 media/
+state_filters.json

@@ -277,6 +277,20 @@ def get_public_ad(ad_id: int):
     return db_runner.run(_get_public_ad(ad_id))
 
 
+async def _get_public_ad_with_images(ad_id: int):
+    """Активное объявление и список его изображений (публичный доступ)."""
+    ad = await crud_manager.ad.get_active_by_id(ad_id)
+    if not ad:
+        return None, []
+    images = await crud_manager.car_image.get_all_by_ad_id(ad_id)
+    return ad, images
+
+
+def get_public_ad_with_images(ad_id: int):
+    """Синхронный фасад: активное объявление и картинки."""
+    return db_runner.run(_get_public_ad_with_images(ad_id))
+
+
 def search_public_ads(query: str, limit: int = 5):
     """Поиск активных объявлений по названию (ILIKE)."""
     return db_runner.run(_search_public_ads(query, limit))

@@ -10,7 +10,8 @@ logger = logging.getLogger("app.bot.guard")
 def chat_sender(notification: Notification) -> str:
     """Извлечь chatId/sender из уведомления."""
     sender_data = notification.event.get("senderData", {}) or {}
-    return sender_data.get("sender") or sender_data.get("chatId") or "unknown"
+    # Для входящих сообщений sender == chatId, для исходящих API-уведомлений chatId — получатель.
+    return sender_data.get("chatId") or sender_data.get("sender") or "unknown"
 
 
 def sender_name(notification: Notification) -> str | None:

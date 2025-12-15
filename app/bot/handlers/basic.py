@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections import deque
 
 from whatsapp_chatbot_python import Notification
 
@@ -13,8 +14,11 @@ from ..services.forms import sell_form_manager
 from ..ui.texts import START_TEXT
 from .sell import handle_sell_text
 from .buy import handle_buy_text
+from .buy import _reset_filters
 
 logger = logging.getLogger("app.bot.handlers.basic")
+# Короткий кэш обработанных idMessage, чтобы не отвечать дважды на outgoing/incoming пары
+_PROCESSED_IDS: deque[str] = deque(maxlen=500)
 
 
 def _message_text(notification: Notification) -> str:
@@ -39,6 +43,7 @@ def handle_start(notification: Notification, settings: Settings, allowed: set[st
     if not guard_sender(notification, allowed):
         return
     ensure_user(chat_sender(notification), notification.event.get("senderData", {}).get("senderName"))
+    _reset_filters(chat_sender(notification))
     notification.answer(START_TEXT)
 
 
@@ -67,6 +72,16 @@ def handle_fallback(notification: Notification, settings: Settings, allowed: set
         return
     if notification.event.get("typeWebhook") not in {"incomingMessageReceived", "outgoingMessageReceived"}:
         return
+    msg_id = notification.event.get("idMessage")
+    if msg_id:
+        if msg_id in _PROCESSED_IDS:
+            return
+        _PROCESSED_IDS.append(msg_id)
+    msg_id = notification.event.get("idMessage")
+    if msg_id:
+        if msg_id in _PROCESSED_IDS:
+            return
+        _PROCESSED_IDS.add(msg_id)
     sender = chat_sender(notification)
     ensure_user(sender, notification.event.get("senderData", {}).get("senderName"))
     message_data = notification.event.get("messageData", {})
