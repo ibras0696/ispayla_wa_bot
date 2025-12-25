@@ -10,9 +10,10 @@ from typing import Dict
 from whatsapp_chatbot_python import Notification
 
 from ...config import Settings
+from ..services.guard import sender_name
 from ..services.state import ensure_user, get_ads_preview, get_ad_with_images
 from ..services.forms import sell_form_manager
-from ..ui.buttons import SELL_MENU_BUTTONS, SELL_TEXT_TO_BUTTON
+from ..ui.buttons import SELL_MENU_BUTTONS, SELL_TEXT_TO_BUTTON, BACK_MENU_BUTTON
 from ..ui.texts import SELL_MENU_TEXT
 
 logger = logging.getLogger("app.bot.handlers.sell")
@@ -28,7 +29,7 @@ def send_sell_menu(notification: Notification, sender: str) -> None:
     payload = {
         "chatId": chat_id,
         **SELL_MENU_TEXT,
-        "buttons": SELL_MENU_BUTTONS,
+        "buttons": SELL_MENU_BUTTONS + [BACK_MENU_BUTTON],
     }
     notification.api.request(
         "POST",
@@ -40,7 +41,7 @@ def send_sell_menu(notification: Notification, sender: str) -> None:
 
 def handle_sell_button(notification: Notification, settings: Settings, sender: str, button_id: str) -> None:
     """Обработать кнопки «Продажи» (создание объявления, список и т.д.)."""
-    ensure_user(sender, notification.event.get("senderData", {}).get("senderName"))
+    ensure_user(sender, sender_name(notification))
     if button_id == "sell":
         send_sell_menu(notification, sender)
     elif button_id == "sell_create":
@@ -48,6 +49,8 @@ def handle_sell_button(notification: Notification, settings: Settings, sender: s
         notification.answer(prompt)
     elif button_id == "sell_list":
         notification.answer(_sell_list_text(sender))
+        _send_back_button(notification)
+        notification.answer("Чтобы вернуться в меню, нажми «Назад» или напиши 0.")
 
 
 def handle_sell_text(notification: Notification, settings: Settings, sender: str, text: str) -> bool:
@@ -75,9 +78,9 @@ def _sell_list_text(sender: str) -> str:
             f"{idx}. {item['title']} — {item['price']} ₽ ({item['status']}) ID#{item['id']}"
         )
     if total > len(summary):
-        lines.append("…Показаны последние объявления. Напиши цифру из списка или ID#, чтобы открыть карточку.")
+        lines.append("Показаны последние объявления. Напиши цифру из списка или ID#, чтобы открыть карточку.")
     else:
-        lines.append("Просто напиши цифру (например 1) или ID# объявления, чтобы получить детали и фото.")
+        lines.append("Напиши цифру (1, 2, …) или ID#, чтобы открыть и увидеть фото.")
     return "\n".join(lines)
 
 
@@ -119,13 +122,36 @@ def _send_ad_detail(notification: Notification, sender: str, ad_id: int) -> None
         ad.title or "Без названия",
         f"Статус: {'активно' if ad.is_active else 'в обработке'}",
         f"Цена: {ad.price or 0} ₽",
+        f"Марка/модель: {ad.car_brand_id or '-'} / {ad.model_name or '-'}",
         f"Год: {ad.year_car} | Пробег: {ad.mileage_km_car} км",
+        f"Регион: {ad.region or '-'} | Состояние: {ad.condition or '-'}",
         f"VIN: {ad.vin_number}",
+        "",
         "Описание:",
         (ad.description or "-"),
     ]
     notification.answer("\n".join(lines))
     if images:
-        first = Path(images[0].image_url)
-        if first.exists():
-            notification.answer_with_file(str(first), caption="Главное фото")
+        for idx, img in enumerate(images[:3], start=1):
+            path = Path(img.image_url)
+            if path.exists():
+                notification.answer_with_file(str(path), caption=f"Фото {idx}")
+
+
+def _send_back_button(notification: Notification) -> None:
+    """Отправить кнопку назад в главное меню."""
+    chat_id = notification.chat
+    if not chat_id:
+        return
+    payload = {
+        "chatId": chat_id,
+        "header": "Мои объявления",
+        "body": "Вернуться в меню",
+        "footer": "Нажми, чтобы открыть главное меню",
+        "buttons": [{"buttonId": "back_menu", "buttonText": "⬅️ Назад"}],
+    }
+    notification.api.request(
+        "POST",
+        "{{host}}/waInstance{{idInstance}}/sendInteractiveButtonsReply/{{apiTokenInstance}}",
+        payload,
+    )

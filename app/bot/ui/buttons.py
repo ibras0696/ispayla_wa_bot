@@ -14,15 +14,17 @@ BUY_MENU_BUTTONS = [
 ]
 
 BUY_NAV_BUTTONS = [
-    {"buttonId": "buy_prev", "buttonText": "⬅️ Назад"},
-    {"buttonId": "buy_next", "buttonText": "➡️ Дальше"},
-    {"buttonId": "buy_refresh", "buttonText": "Обновить"},
+    {"buttonId": "buy_prev", "buttonText": "⬅️ Предыдущая"},
+    {"buttonId": "buy_next", "buttonText": "➡️ Следующая"},
+    {"buttonId": "buy_refresh", "buttonText": "Обновить список"},
 ]
 
 SELL_MENU_BUTTONS = [
     {"buttonId": "sell_create", "buttonText": "Разместить объявление"},
     {"buttonId": "sell_list", "buttonText": "Мои объявления"},
 ]
+
+BACK_MENU_BUTTON = {"buttonId": "back_menu", "buttonText": "⬅️ В меню"}
 
 TEXT_TO_BUTTON = {
     "профиль": "profile",

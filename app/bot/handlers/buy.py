@@ -8,6 +8,7 @@ from pathlib import Path
 from whatsapp_chatbot_python import Notification
 
 from ...config import Settings
+from ..services.guard import sender_name
 from ..services.state import (
     ensure_user,
     get_recent_public_ads,
@@ -21,7 +22,7 @@ from ..services.state import (
     add_favorite,
     get_favorites,
 )
-from ..ui.buttons import BUY_MENU_BUTTONS, BUY_TEXT_TO_BUTTON, BUY_NAV_BUTTONS
+from ..ui.buttons import BUY_MENU_BUTTONS, BUY_TEXT_TO_BUTTON, BUY_NAV_BUTTONS, BACK_MENU_BUTTON
 from ..ui.texts import BUY_MENU_TEXT, BUY_PLACEHOLDER_RESPONSES
 
 logger = logging.getLogger("app.bot.handlers.buy")
@@ -41,6 +42,62 @@ _FILTER_STATE: dict[str, dict] = {}
 PAGE_SIZE = 5
 
 
+def _new_filter_state() -> dict:
+    """Базовые значения фильтров/пагинации по умолчанию."""
+    return {
+        "page": 0,
+        "page_size": PAGE_SIZE,
+        "min_price": None,
+        "max_price": None,
+        "year": None,
+        "min_year": None,
+        "max_year": None,
+        "min_mileage": None,
+        "max_mileage": None,
+        "car_brand_id": None,
+        "brand_name": None,
+        "region": None,
+        "condition": None,
+        "sort_by": "created",
+        "sort_order": "desc",
+    }
+
+
+def _ensure_state(sender: str) -> dict:
+    """Вернуть стейт пользователя, дополнив недостающие ключи."""
+    template = _new_filter_state()
+    state = _FILTER_STATE.setdefault(sender, template.copy())
+    for key, default in template.items():
+        state.setdefault(key, default)
+    return state
+
+
+_CONDITION_SYNONYMS = {
+    "целый": "целый",
+    "целая": "целый",
+    "без дтп": "целый",
+    "не битый": "целый",
+    "небитый": "целый",
+    "после дтп": "после дтп",
+    "битый": "после дтп",
+    "битая": "после дтп",
+    "ремонт": "после дтп",
+    "ремонтировался": "после дтп",
+}
+
+_SORT_PRICE_TOKENS = {"цена", "цене", "стоимость", "price"}
+_SORT_DATE_TOKENS = {"дата", "датe", "новые", "new", "created"}
+_ASC_TOKENS = {"возрастание", "возрастанию", "дешевле", "asc", "min", "минимум"}
+_DESC_TOKENS = {"убывание", "убыванию", "дороже", "desc", "max", "максимум", "новые", "сначала новые"}
+
+
+def _format_phone(sender: str | None) -> str:
+    """Вернуть только номер без домена."""
+    if not sender:
+        return ""
+    return sender.split("@", 1)[0]
+
+
 def _load_filter_state() -> None:
     """Загрузить сохранённые фильтры с диска."""
     if _STATE_FILE.exists():
@@ -48,6 +105,8 @@ def _load_filter_state() -> None:
             data = json.loads(_STATE_FILE.read_text(encoding="utf-8"))
             if isinstance(data, dict):
                 _FILTER_STATE.update({k: v for k, v in data.items() if isinstance(v, dict)})
+                for sender in list(_FILTER_STATE.keys()):
+                    _ensure_state(sender)
         except Exception as exc:  # pragma: no cover
             logger.warning("Не удалось загрузить состояние фильтров: %s", exc)
 
@@ -76,7 +135,7 @@ def send_buy_menu(notification: Notification, sender: str) -> None:
     payload = {
         "chatId": chat_id,
         **BUY_MENU_TEXT,
-        "buttons": BUY_MENU_BUTTONS,
+        "buttons": BUY_MENU_BUTTONS + [BACK_MENU_BUTTON],
     }
     notification.api.request(
         "POST",
@@ -95,7 +154,7 @@ def handle_buy_button(notification: Notification, settings: Settings, sender: st
     :param sender: идентификатор отправителя.
     :param button_id: ID выбранной кнопки (buy, buy_all, buy_filter, buy_favorites, buy_search).
     """
-    ensure_user(sender, notification.event.get("senderData", {}).get("senderName"))
+    ensure_user(sender, sender_name(notification))
     if button_id == "buy":
         _reset_filters(sender)
         send_buy_menu(notification, sender)
@@ -147,10 +206,10 @@ def handle_buy_text(notification: Notification, settings: Settings, sender: str,
     detail_id = _extract_public_id(sender, text)
     if detail_id is not None:
         logger.info("Запрос детали объявления: chat=%s id=%s, cache_ids=%s", sender, detail_id, _LAST_CATALOG.get(sender))
-        detail_text, image_path = _build_ad_detail(sender, detail_id)
+        detail_text, image_paths = _build_ad_detail(sender, detail_id)
         notification.answer(detail_text)
-        if image_path and image_path.exists():
-            notification.answer_with_file(str(image_path), caption="Фото объявления")
+        for idx, path in enumerate(image_paths[:3], start=1):
+            notification.answer_with_file(str(path), caption=f"Фото {idx}")
         return True
 
     # Добавление в избранное после просмотра
@@ -199,6 +258,18 @@ def handle_buy_text(notification: Notification, settings: Settings, sender: str,
         notification.answer(_update_brand_filter(sender, cleaned))
         _send_nav_buttons(notification, sender)
         return True
+    if cleaned.startswith("регион"):
+        notification.answer(_update_region_filter(sender, text))
+        _send_nav_buttons(notification, sender)
+        return True
+    if cleaned.startswith("состояние"):
+        notification.answer(_update_condition_filter(sender, text))
+        _send_nav_buttons(notification, sender)
+        return True
+    if cleaned.startswith("сорт"):
+        notification.answer(_update_sorting(sender, text))
+        _send_nav_buttons(notification, sender)
+        return True
     if cleaned == "сброс":
         _reset_filters(sender)
         _send_catalog(notification, sender)
@@ -221,7 +292,7 @@ def _build_catalog_text(sender: str, limit: int = 5) -> str:
     return _render_filtered(sender)
 
 
-def _build_ad_detail(viewer: str, ad_id: int) -> tuple[str, Path | None]:
+def _build_ad_detail(viewer: str, ad_id: int) -> tuple[str, list[Path]]:
     # 1) сначала смотрим в кеш последней выдачи
     ad = None
     if viewer in _LAST_DETAILS and ad_id in _LAST_DETAILS[viewer]:
@@ -236,14 +307,6 @@ def _build_ad_detail(viewer: str, ad_id: int) -> tuple[str, Path | None]:
     if not ad:
         ad = get_public_ad(ad_id)
 
-    # 3) если всё ещё нет — обновляем витрину и ищем среди последних
-    if not ad:
-        fresh = get_recent_public_ads(PAGE_SIZE)
-        cache = _LAST_DETAILS.setdefault(viewer, {})
-        for item in fresh:
-            cache[item["id"]] = item
-        ad = cache.get(ad_id)
-
     if not ad:
         logger.info(
             "Не нашли объявление ad_id=%s viewer=%s keys=%s cache_for_viewer=%s",
@@ -252,25 +315,36 @@ def _build_ad_detail(viewer: str, ad_id: int) -> tuple[str, Path | None]:
             list(_LAST_DETAILS.keys()),
             _LAST_DETAILS.get(viewer),
         )
-        return "Не нашёл активное объявление с таким ID.", None
+        # Попробуем заново построить каталог для этого пользователя и взять из кэша
+        refreshed = _render_filtered(viewer)
+        ad = _LAST_DETAILS.get(viewer, {}).get(ad_id)
+        if not ad:
+            return "Не нашёл активное объявление с таким ID.", []
     _LAST_VIEWED[viewer] = ad["id"]
+    contact_phone = _format_phone(ad.get("sender"))
     lines = [
         f"Объявление #{ad['id']}",
         ad["title"] or "Без названия",
+        f"Модель: {ad.get('model') or '-'}",
         f"Цена: {ad['price']} ₽",
         f"Год: {ad['year']} | Пробег: {ad['mileage']} км",
+        f"Состояние: {ad.get('condition') or '-'} | Регион: {ad.get('region') or '-'}",
         f"Статус: {ad['status']}",
+        f"Контакты: {contact_phone or '—'}",
+        f"WhatsApp: https://wa.me/{contact_phone}" if contact_phone else "",
     ]
-    detail_text = "\n".join(lines)
+    detail_text = "\n".join([ln for ln in lines if ln])
 
-    # Попытка получить фото из БД (первое изображение)
+    # Попытка получить фото из БД (первые несколько изображений)
     ad_obj, images = get_public_ad_with_images(ad["id"])
     if images:
-        first_path = Path(images[0].image_url)
-        if first_path.exists():
-            return detail_text, first_path
-
-    return detail_text, None
+        paths = [Path(img.image_url) for img in images]
+        existing = [p for p in paths if p.exists()]
+        if not existing and paths:
+            logger.info("Нет доступных файлов для фото объявления id=%s paths=%s", ad_id, paths)
+        if existing:
+            return detail_text, existing[:3]
+    return detail_text, []
 
 
 def _build_search_text(sender: str, query: str, limit: int = 5) -> str:
@@ -299,36 +373,53 @@ def _extract_public_id(sender: str, text: str) -> int | None:
         num = int(cleaned)
         # если был предыдущий список — позволяем выбирать по номеру
         ids = _LAST_CATALOG.get(sender) or []
-        if 1 <= num <= len(ids):
+        # приоритет: позиция в списке, потом прямой ID
+        if ids and 1 <= num <= len(ids):
             return ids[num - 1]
         return num
     return None
 
 
 def _build_filter_text(sender: str) -> str:
-    state = _FILTER_STATE.get(sender, {})
+    state = _ensure_state(sender)
     year_desc = state.get("year", "любой")
     if state.get("min_year") or state.get("max_year"):
         year_desc = f"{state.get('min_year', 'от')} - {state.get('max_year', 'до')}"
+    sort_label = "дате (новые сверху)"
+    if state.get("sort_by") == "price":
+        sort_label = "цене"
+        if state.get("sort_order") == "asc":
+            sort_label += " (дешевле → дороже)"
+        else:
+            sort_label += " (дороже → дешевле)"
     lines = [
-        "Фильтры по объявлениям:",
-        f"- Марка: {state.get('brand_name', 'любая')}",
-        f"- Цена: {state.get('min_price', 'от')} - {state.get('max_price', 'до')}",
-        f"- Год: {year_desc}",
-        f"- Пробег: {state.get('min_mileage', 'от')} - {state.get('max_mileage', 'до')}",
+        "Фильтры:",
+        f"• Марка: {state.get('brand_name') or 'любая'}",
+        f"• Цена: {state.get('min_price', 'от')} — {state.get('max_price', 'до')}",
+        f"• Год: {year_desc}",
+        f"• Пробег: {state.get('min_mileage', 'от')} — {state.get('max_mileage', 'до')}",
+        f"• Регион: {state.get('region') or 'любой'}",
+        f"• Состояние: {state.get('condition') or 'любое'}",
+        f"• Сортировка: {sort_label}",
         "",
-        "Команды:",
-        "• цена 100000-500000",
-        "• год 2010   или   год 2010-2015",
-        "• пробег 0-150000",
-        "• марка Toyota",
-        "• показать — применить фильтр, дальше/назад — листать страницы, сброс — очистить.",
+        "Что писать:",
+        "цена 100000-500000",
+        "год 2010  или  год 2010-2015",
+        "пробег 0-150000",
+        "марка Toyota",
+        "регион Грозный  (или «регион любой» чтобы сбросить)",
+        "состояние целый  или  состояние после ДТП",
+        "сортировка цена  (по умолчанию новые сверху)",
+        "",
+        "показать — применить фильтры",
+        "дальше/назад — листать",
+        "сброс — очистить фильтры",
     ]
     return "\n".join(lines)
 
 
 def _render_filtered(sender: str) -> str:
-    state = _FILTER_STATE.setdefault(sender, {"page": 0, "page_size": PAGE_SIZE})
+    state = _ensure_state(sender)
     page = state.get("page", 0)
     size = state.get("page_size", PAGE_SIZE)
     total = count_filtered_public_ads(state)
@@ -337,12 +428,19 @@ def _render_filtered(sender: str) -> str:
     _LAST_DETAILS[sender] = {ad["id"]: ad for ad in ads}
     logger.info("Рендер каталога: sender=%s page=%s total=%s ids=%s", sender, page, total, _LAST_CATALOG.get(sender))
     if not ads:
-        return "Пока нет активных объявлений под эти фильтры. Напиши «сброс» или «покупка», чтобы начать заново."
+        return "Пока нет объявлений под эти фильтры. Напиши «сброс» или «покупка», чтобы начать заново."
     total_pages = max(1, (total + size - 1) // size)
-    lines = [f"Найдено: {total}. Страница {page + 1}/{total_pages}:"]
+    sort_desc = "новые сверху"
+    if state.get("sort_by") == "price":
+        sort_desc = "дороже → дешевле"
+        if state.get("sort_order") == "asc":
+            sort_desc = "дешевле → дороже"
+    lines = [
+        f"Каталог: {total} шт. Страница {page + 1}/{total_pages} | Сортировка: {sort_desc}",
+    ]
     for idx, ad in enumerate(ads, start=1):
         lines.append(f"{idx}. {ad['title']} — {ad['price']} ₽, {ad['year']} г., {ad['mileage']} км (ID#{ad['id']})")
-    lines.append("Напиши номер или ID#, чтобы открыть, «дальше/назад» — листать, «сброс» — очистить фильтры.")
+    lines.append("Напиши номер из списка или ID#, чтобы открыть. «дальше/назад» — листать, «сброс» — очистить.")
     return "\n".join(lines)
 
 
@@ -375,24 +473,47 @@ def _send_catalog(notification: Notification, sender: str) -> None:
     )
 
 
+def _send_nav_buttons(notification: Notification, sender: str) -> None:
+    """Отправить только кнопки навигации (после изменения фильтра)."""
+    chat_id = notification.chat
+    if not chat_id:
+        return
+    buttons = _nav_buttons(sender)
+    if not buttons:
+        return
+    payload = {
+        "chatId": chat_id,
+        "body": "Фильтры обновлены. Используй кнопки, чтобы листать каталог.",
+        "header": "Навигация каталога",
+        "footer": "⬅️ Назад / ➡️ Дальше / Обновить",
+        "buttons": buttons,
+    }
+    notification.api.request(
+        "POST",
+        "{{host}}/waInstance{{idInstance}}/sendInteractiveButtonsReply/{{apiTokenInstance}}",
+        payload,
+    )
+
+
 def _nav_buttons(sender: str) -> list[dict]:
     """Сформировать кнопки навигации (prev/next/refresh) исходя из числа страниц."""
-    state = _FILTER_STATE.setdefault(sender, {"page": 0, "page_size": PAGE_SIZE})
+    state = _ensure_state(sender)
     page = state.get("page", 0)
     size = state.get("page_size", PAGE_SIZE)
     total = count_filtered_public_ads(state)
     total_pages = max(1, (total + size - 1) // size)
-    buttons = []
+    buttons: list[dict] = []
     if page > 0:
         buttons.append(BUY_NAV_BUTTONS[0])  # prev
     if page + 1 < total_pages:
         buttons.append(BUY_NAV_BUTTONS[1])  # next
     buttons.append(BUY_NAV_BUTTONS[2])  # refresh
+    buttons.append(BACK_MENU_BUTTON)
     return buttons
 
 
 def _shift_page(sender: str, delta: int) -> None:
-    state = _FILTER_STATE.setdefault(sender, {"page": 0, "page_size": PAGE_SIZE})
+    state = _ensure_state(sender)
     page = state.get("page", 0) + delta
     state["page"] = max(0, page)
     _persist_filter_state()
@@ -409,7 +530,7 @@ def _parse_range(text: str) -> tuple[int | None, int | None]:
 
 def _update_price_filter(sender: str, text: str) -> str:
     low, high = _parse_range(text)
-    state = _FILTER_STATE.setdefault(sender, {"page": 0, "page_size": PAGE_SIZE})
+    state = _ensure_state(sender)
     state["min_price"], state["max_price"] = low, high
     state["page"] = 0
     _persist_filter_state()
@@ -418,19 +539,7 @@ def _update_price_filter(sender: str, text: str) -> str:
 
 def _reset_filters(sender: str) -> None:
     """Сбросить фильтры и вернуть пользователя на первую страницу каталога."""
-    _FILTER_STATE[sender] = {
-        "page": 0,
-        "page_size": PAGE_SIZE,
-        "min_price": None,
-        "max_price": None,
-        "year": None,
-        "min_year": None,
-        "max_year": None,
-        "min_mileage": None,
-        "max_mileage": None,
-        "car_brand_id": None,
-        "brand_name": None,
-    }
+    _FILTER_STATE[sender] = _new_filter_state()
     _LAST_CATALOG.pop(sender, None)
     _LAST_DETAILS.pop(sender, None)
     _LAST_VIEWED.pop(sender, None)
@@ -440,7 +549,7 @@ def _reset_filters(sender: str) -> None:
 
 def _update_year_filter(sender: str, text: str) -> str:
     low, high = _parse_range(text)
-    state = _FILTER_STATE.setdefault(sender, {"page": 0, "page_size": PAGE_SIZE})
+    state = _ensure_state(sender)
     if low and high and low != high:
         # если диапазон — используем как min/max года через mileage поля, но храним как год для простоты
         state["year"] = None
@@ -456,7 +565,7 @@ def _update_year_filter(sender: str, text: str) -> str:
 
 def _update_mileage_filter(sender: str, text: str) -> str:
     low, high = _parse_range(text)
-    state = _FILTER_STATE.setdefault(sender, {"page": 0, "page_size": PAGE_SIZE})
+    state = _ensure_state(sender)
     state["min_mileage"], state["max_mileage"] = low, high
     state["page"] = 0
     _persist_filter_state()
@@ -471,9 +580,91 @@ def _update_brand_filter(sender: str, text: str) -> str:
     brand = get_brand_by_name(name)
     if not brand:
         return "Марка не найдена в базе. Попробуйте другое название."
-    state = _FILTER_STATE.setdefault(sender, {"page": 0, "page_size": PAGE_SIZE})
+    state = _ensure_state(sender)
     state["car_brand_id"] = brand.id
     state["brand_name"] = brand.name
+    state["page"] = 0
+    _persist_filter_state()
+    return _render_filtered(sender)
+
+
+def _update_region_filter(sender: str, text: str) -> str:
+    parts = text.split(maxsplit=1)
+    if len(parts) < 2:
+        return "Укажите регион после слова «регион», например: регион Грозный"
+    region = parts[1].strip()
+    state = _ensure_state(sender)
+    if not region or region in {"любой", "-", "any"}:
+        state["region"] = None
+    else:
+        if len(region) < 2:
+            return "Название региона должно быть длиннее 1 символа."
+        state["region"] = region.title()
+    state["page"] = 0
+    _persist_filter_state()
+    return _render_filtered(sender)
+
+
+def _normalize_condition(value: str) -> tuple[str | None, bool]:
+    cleaned = value.strip().lower()
+    if not cleaned or cleaned in {"любой", "-", "any"}:
+        return None, True
+    canonical = _CONDITION_SYNONYMS.get(cleaned)
+    return canonical, canonical is not None
+
+
+def _update_condition_filter(sender: str, text: str) -> str:
+    parts = text.split(maxsplit=1)
+    if len(parts) < 2:
+        return "Укажите состояние после слова «состояние»: целый или после ДТП."
+    canonical, ok = _normalize_condition(parts[1])
+    if not ok:
+        return "Не понял состояние. Напишите «состояние целый» или «состояние после ДТП»."
+    state = _ensure_state(sender)
+    state["condition"] = canonical
+    state["page"] = 0
+    _persist_filter_state()
+    return _render_filtered(sender)
+
+
+def _strip_sort_command(text: str) -> str:
+    cleaned = text.strip().lower()
+    for prefix in ("сортировка", "сорт"):
+        if cleaned.startswith(prefix):
+            cleaned = cleaned[len(prefix):].strip()
+            break
+    if cleaned.startswith("по "):
+        cleaned = cleaned[3:]
+    return cleaned
+
+
+def _update_sorting(sender: str, text: str) -> str:
+    body = _strip_sort_command(text)
+    if not body:
+        return "Укажите что сортировать: «сорт цена» или «сорт дата»."
+    tokens = body.split()
+    key_token = tokens[0]
+    sort_by = "created"
+    if key_token in _SORT_PRICE_TOKENS:
+        sort_by = "price"
+    elif key_token in _SORT_DATE_TOKENS:
+        sort_by = "created"
+    else:
+        # неизвестный ключ — оставляем прежний и подсказываем пользователю
+        return "Пишите «сорт цена» или «сорт дата» (по умолчанию новые сверху)."
+
+    sort_order = "desc"
+    if any(tok in _ASC_TOKENS for tok in tokens[1:]):
+        sort_order = "asc"
+    elif any(tok in _DESC_TOKENS for tok in tokens[1:]):
+        sort_order = "desc"
+    else:
+        # если пользователь выбрал цену, но не указал направление — оставляем дороже→дешевле
+        sort_order = "desc" if sort_by == "created" else "desc"
+
+    state = _ensure_state(sender)
+    state["sort_by"] = sort_by
+    state["sort_order"] = sort_order
     state["page"] = 0
     _persist_filter_state()
     return _render_filtered(sender)

@@ -11,7 +11,7 @@ import requests
 
 from .state import create_ad_from_form
 
-CANCEL_WORDS = {"отмена", "cancel", "стоп", "stop"}
+CANCEL_WORDS = {"отмена", "cancel", "стоп", "stop", "0", "00", "000"}
 MEDIA_MESSAGE_TYPES = {"imageMessage", "documentMessage"}
 MAX_PHOTOS = 3
 POSTGRES_INT_MAX = 2_147_483_647
@@ -65,7 +65,7 @@ class SellFormManager:
         text = message.strip()
         if text.lower() in CANCEL_WORDS:
             self.cancel(sender)
-            return "Окей, отменили создание объявления."
+            return "Окей, отменили создание объявления. Пиши 0 для рестарта."
 
         state = self._states[sender]
         step = SELL_FORM_STEPS[state.step_index]
@@ -99,7 +99,8 @@ class SellFormManager:
                 return (
                     "Объявление сохранено!\n"
                     f"ID: {ad.id}. Статус: {'активно' if ad.is_active else 'на модерации'}.\n"
-                    "В ближайшее время модератор проверит данные."
+                    "В ближайшее время модератор проверит данные.\n"
+                    "Чтобы вернуться в меню, нажми «Назад» или отправь 0/000."
                 )
 
         next_prompt = SELL_FORM_STEPS[state.step_index]["prompt"]
@@ -182,18 +183,35 @@ def _validate_mileage(value: str) -> int:
 def _validate_photos(value: str) -> list[str]:
     raise ValueError("Отправь фотографию как вложение, не текстом.")
 
+def _validate_region(value: str) -> str:
+    """Проверить регион."""
+    return _validate_text(value, "Регион", 2)
+
+
+def _validate_condition(value: str) -> str:
+    """Привести состояние к каноническому виду."""
+    cleaned = value.strip().lower()
+    if cleaned in {"целый", "целая", "без дтп", "не битый", "небитый"}:
+        return "целый"
+    if cleaned in {"после дтп", "битый", "битая", "ремонт", "ремонтировался"}:
+        return "после дтп"
+    raise ValueError("Укажи состояние: целый или после ДТП")
+
 
 SELL_FORM_STEPS = [
     {"key": "title", "prompt": "1️⃣ Введи заголовок объявления:", "validator": lambda v: _validate_text(v, "Заголовок")},
     {"key": "description", "prompt": "2️⃣ Опиши автомобиль (комплектация, состояние):", "validator": lambda v: _validate_text(v, "Описание", 10)},
     {"key": "price", "prompt": "3️⃣ Укажи цену в рублях:", "validator": _validate_price},
-    {"key": "brand", "prompt": "4️⃣ Марка и модель (например, BMW 3-Series):", "validator": lambda v: _validate_text(v, "Марка", 2)},
-    {"key": "year", "prompt": "5️⃣ Год выпуска:", "validator": _validate_year},
-    {"key": "mileage", "prompt": "6️⃣ Пробег (км):", "validator": _validate_mileage},
-    {"key": "vin", "prompt": "7️⃣ VIN-номер (17 символов):", "validator": lambda v: _validate_text(v, "VIN", 5)},
+    {"key": "brand", "prompt": "4️⃣ Марка (например, Toyota):", "validator": lambda v: _validate_text(v, "Марка", 2)},
+    {"key": "model", "prompt": "5️⃣ Модель (например, Camry):", "validator": lambda v: _validate_text(v, "Модель", 1)},
+    {"key": "year", "prompt": "6️⃣ Год выпуска:", "validator": _validate_year},
+    {"key": "mileage", "prompt": "7️⃣ Пробег (км):", "validator": _validate_mileage},
+    {"key": "vin", "prompt": "8️⃣ VIN-номер (17 символов):", "validator": lambda v: _validate_text(v, "VIN", 5)},
+    {"key": "region", "prompt": "9️⃣ Регион продажи (например, Грозный):", "validator": _validate_region},
+    {"key": "condition", "prompt": "🔟 Состояние авто (целый / после ДТП):", "validator": _validate_condition},
     {
         "key": "photos",
-        "prompt": "8️⃣ Прикрепи фото автомобиля (можно по одному). Когда закончишь, напиши 'готово'.",
+        "prompt": "1️⃣1️⃣ Прикрепи фото автомобиля (до 3 шт, можно по одному). Когда закончишь, напиши 'готово'.",
         "validator": _validate_photos,
         "type": "photos",
     },
