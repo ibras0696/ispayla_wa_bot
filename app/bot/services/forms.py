@@ -11,7 +11,7 @@ import requests
 
 from .state import create_ad_from_form
 
-CANCEL_WORDS = {"отмена", "cancel", "стоп", "stop", "0", "00", "000"}
+CANCEL_WORDS = {"отмена", "cancel", "стоп", "stop", "меню", "menu"}
 MEDIA_MESSAGE_TYPES = {"imageMessage", "documentMessage"}
 MAX_PHOTOS = 3
 POSTGRES_INT_MAX = 2_147_483_647
@@ -65,7 +65,7 @@ class SellFormManager:
         text = message.strip()
         if text.lower() in CANCEL_WORDS:
             self.cancel(sender)
-            return "Окей, отменили создание объявления. Пиши 0 для рестарта."
+            return "Окей, отменили создание объявления. Напиши «меню», чтобы вернуться в главное меню."
 
         state = self._states[sender]
         step = SELL_FORM_STEPS[state.step_index]
@@ -100,7 +100,7 @@ class SellFormManager:
                     "Объявление сохранено!\n"
                     f"ID: {ad.id}. Статус: {'активно' if ad.is_active else 'на модерации'}.\n"
                     "В ближайшее время модератор проверит данные.\n"
-                    "Чтобы вернуться в меню, нажми «Назад» или отправь 0/000."
+                    "Чтобы вернуться в меню, нажми кнопку «⬅️ В меню» или напиши «меню»."
                 )
 
         next_prompt = SELL_FORM_STEPS[state.step_index]["prompt"]

@@ -93,7 +93,7 @@ def handle_fallback(notification: Notification, settings: Settings, allowed: set
         reply = sell_form_manager.handle(sender, incoming)
         if reply:
             notification.answer(reply)
-        if not sell_form_manager.has_state(sender) and normalized_input in {"0", "00", "000"}:
+        if not sell_form_manager.has_state(sender) and normalized_input in {"меню", "menu", "главное меню"}:
             handle_main_menu(notification, settings, allowed)
         return
     if incoming:

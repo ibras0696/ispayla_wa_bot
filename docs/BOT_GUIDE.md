@@ -20,7 +20,7 @@
 ```python
 bot.router.message(command="start")(wrap(handle_start))
 bot.router.message(text_message="баланс")(wrap(handle_balance))
-bot.router.message(text_message=["0", "00", "000"])(wrap(handle_main_menu))
+bot.router.message(text_message=["меню", "Меню", "menu"])(wrap(handle_main_menu))
 bot.router.message(type_message=["buttonsResponseMessage", "interactiveButtonsResponse"])(wrap(handle_menu_selection))
 bot.router.message(text_message=menu_text_triggers)(wrap(handle_menu_text))
 bot.router.message()(wrap(handle_fallback))  # всё остальное

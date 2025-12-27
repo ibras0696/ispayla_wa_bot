@@ -50,7 +50,7 @@ def handle_sell_button(notification: Notification, settings: Settings, sender: s
     elif button_id == "sell_list":
         notification.answer(_sell_list_text(sender))
         _send_back_button(notification)
-        notification.answer("Чтобы вернуться в меню, нажми «Назад» или напиши 0.")
+        notification.answer("Чтобы вернуться в меню, нажми «⬅️ В меню» или напиши «меню».")
 
 
 def handle_sell_text(notification: Notification, settings: Settings, sender: str, text: str) -> bool:
@@ -132,7 +132,7 @@ def _send_ad_detail(notification: Notification, sender: str, ad_id: int) -> None
     ]
     notification.answer("\n".join(lines))
     if images:
-        for idx, img in enumerate(images[:3], start=1):
+        for idx, img in enumerate(images, start=1):
             path = Path(img.image_url)
             if path.exists():
                 notification.answer_with_file(str(path), caption=f"Фото {idx}")
@@ -148,7 +148,7 @@ def _send_back_button(notification: Notification) -> None:
         "header": "Мои объявления",
         "body": "Вернуться в меню",
         "footer": "Нажми, чтобы открыть главное меню",
-        "buttons": [{"buttonId": "back_menu", "buttonText": "⬅️ Назад"}],
+        "buttons": [{"buttonId": "back_menu", "buttonText": "⬅️ В меню"}],
     }
     notification.api.request(
         "POST",

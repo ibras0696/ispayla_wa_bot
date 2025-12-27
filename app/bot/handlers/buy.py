@@ -343,7 +343,7 @@ def _build_ad_detail(viewer: str, ad_id: int) -> tuple[str, list[Path]]:
         if not existing and paths:
             logger.info("Нет доступных файлов для фото объявления id=%s paths=%s", ad_id, paths)
         if existing:
-            return detail_text, existing[:3]
+            return detail_text, existing
     return detail_text, []
 
 
@@ -371,8 +371,14 @@ def _extract_public_id(sender: str, text: str) -> int | None:
         return None
     if cleaned.isdigit():
         num = int(cleaned)
+        if num <= 0:
+            return None
         # если был предыдущий список — позволяем выбирать по номеру
         ids = _LAST_CATALOG.get(sender) or []
+        if (not ids) or num > len(ids):
+            # Попробуем обновить кэш из базы (без отправки текста пользователю)
+            _render_filtered(sender)
+            ids = _LAST_CATALOG.get(sender) or []
         # приоритет: позиция в списке, потом прямой ID
         if ids and 1 <= num <= len(ids):
             return ids[num - 1]
