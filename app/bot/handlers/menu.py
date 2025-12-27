@@ -98,18 +98,20 @@ def _dispatch_button(notification: Notification, settings: Settings, allowed: se
 
 def _send_profile_screen(notification: Notification, sender: str) -> None:
     """Отправить профиль с интерактивной кнопкой возврата."""
-    chat_id = chat_sender(notification)
+    from ..services.guard import chat_sender as _chat_id  # локальный импорт, чтобы не плодить цикл
+
+    chat_id = _chat_id(notification)
     profile_text = build_profile_text(sender)
     if not chat_id:
         notification.answer(profile_text)
-        notification.answer("Напиши 0 или 000, чтобы вернуться в меню.")
+        notification.answer("Нажми «⬅️ В меню» или напиши меню.")
         return
     payload = {
         "chatId": chat_id,
         "header": "Профиль",
         "body": profile_text,
-        "footer": "⬅️ Нажми «Назад» или отправь 0/000",
-        "buttons": [{"buttonId": "back_menu", "buttonText": "⬅️ Назад"}],
+        "footer": "⬅️ Вернуться в меню",
+        "buttons": [{"buttonId": "back_menu", "buttonText": "⬅️ В меню"}],
     }
     try:
         notification.api.request(
@@ -138,7 +140,7 @@ def _send_back_button(notification: Notification, title: str = "Меню") -> No
         "header": title,
         "body": "Вернуться в главное меню",
         "footer": "Нажми, чтобы открыть меню",
-        "buttons": [{"buttonId": "back_menu", "buttonText": "⬅️ Назад"}],
+        "buttons": [{"buttonId": "back_menu", "buttonText": "⬅️ В меню"}],
     }
     try:
         notification.api.request(
