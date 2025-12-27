@@ -99,11 +99,10 @@ def _dispatch_button(notification: Notification, settings: Settings, allowed: se
 def _send_profile_screen(notification: Notification, sender: str) -> None:
     """Отправить профиль текстом и добавить кнопку возврата."""
     notification.answer(build_profile_text(sender))
-    notification.answer("Нажми «⬅️ В меню» ниже или напиши «меню», чтобы вернуться.")
-    _send_back_button(notification, title="Профиль")
+    _send_back_button(notification, title="Профиль", body="Нажми кнопку, чтобы вернуться в меню.")
 
 
-def _send_back_button(notification: Notification, title: str = "Меню") -> None:
+def _send_back_button(notification: Notification, title: str = "Меню", body: str = "Вернуться в главное меню") -> None:
     """Отправить кнопку «Назад» к главному меню."""
     chat_id = notification.chat or chat_sender(notification)
     if not chat_id:
@@ -111,7 +110,7 @@ def _send_back_button(notification: Notification, title: str = "Меню") -> No
     payload = {
         "chatId": chat_id,
         "header": title,
-        "body": "Вернуться в главное меню",
+        "body": body,
         "footer": "Нажми, чтобы открыть меню",
         "buttons": [{"buttonId": "back_menu", "buttonText": "⬅️ В меню"}],
     }
