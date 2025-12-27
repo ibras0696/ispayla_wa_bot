@@ -97,32 +97,10 @@ def _dispatch_button(notification: Notification, settings: Settings, allowed: se
 
 
 def _send_profile_screen(notification: Notification, sender: str) -> None:
-    """Отправить профиль в виде карточки с кнопкой возврата."""
-    from ..services.guard import chat_sender as _chat_id  # локальный импорт, чтобы избежать цикла
-
-    chat_id = _chat_id(notification)
-    profile_text = build_profile_text(sender)
-    if not chat_id:
-        notification.answer(profile_text)
-        notification.answer("Напиши «меню», чтобы вернуться на главный экран.")
-        return
-    payload = {
-        "chatId": chat_id,
-        "header": "Профиль",
-        "body": profile_text,
-        "footer": "⬅️ Вернуться в меню",
-        "buttons": [{"buttonId": "back_menu", "buttonText": "⬅️ В меню"}],
-    }
-    try:
-        notification.api.request(
-            "POST",
-            "{{host}}/waInstance{{idInstance}}/sendInteractiveButtonsReply/{{apiTokenInstance}}",
-            payload,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Не удалось отправить профиль с кнопкой: chat_id=%s err=%s", chat_id, exc)
-        notification.answer(profile_text)
-        notification.answer("Напиши «меню», чтобы вернуться в главное меню.")
+    """Отправить профиль текстом и добавить кнопку возврата."""
+    notification.answer(build_profile_text(sender))
+    notification.answer("Нажми «⬅️ В меню» ниже или напиши «меню», чтобы вернуться.")
+    _send_back_button(notification, title="Профиль")
 
 
 def _send_back_button(notification: Notification, title: str = "Меню") -> None:
