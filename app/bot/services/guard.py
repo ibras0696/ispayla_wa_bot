@@ -16,7 +16,11 @@ def chat_sender(notification: Notification) -> str:
 
 def sender_name(notification: Notification) -> str | None:
     sender_data = notification.event.get("senderData", {}) or {}
-    return sender_data.get("senderName")
+    return (
+        sender_data.get("chatName")
+        or sender_data.get("senderContactName")
+        or sender_data.get("senderName")
+    )
 
 
 def is_sender_allowed(sender: str, allowed: set[str] | None) -> bool:

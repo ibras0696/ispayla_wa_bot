@@ -25,6 +25,10 @@ class CrudeAdd:
                   car_brand_id: int,  # ID марки автомобиля
                   mileage_km_car: int,  # Пробег в км
                   vin_number: str,  # Уникальный VIN-номер
+                  *,
+                  model_name: str | None = None,  # Модель автомобиля
+                  region: str | None = None,  # Регион продажи
+                  condition: str | None = None,  # Состояние авто
                   day_count: int = 7,  # Количество дней публикации по умолчанию 7
                   is_active: bool = True  # Активно ли объявление
                   ) -> Ad:
@@ -36,8 +40,11 @@ class CrudeAdd:
         :param price: Цена объявления
         :param year_car: Год выпуска автомобиля
         :param car_brand_id: ID марки автомобиля
+        :param model_name: Модель автомобиля
         :param mileage_km_car: Пробег в км
         :param vin_number: Уникальный VIN-номер
+        :param region: Регион продажи
+        :param condition: Состояние авто
         :param day_count: Количество дней публикации (по умолчанию 7)
         :param is_active: Активно ли объявление (по умолчанию False)
         :return: Объект объявления Ad
@@ -52,8 +59,11 @@ class CrudeAdd:
                     price=price,
                     year_car=year_car,
                     car_brand_id=car_brand_id,
+                    model_name=model_name,
                     mileage_km_car=mileage_km_car,
                     vin_number=vin_number,
+                    region=region,
+                    condition=condition,
                     day_count=day_count,
                     is_active=is_active,
                 )
@@ -83,8 +93,11 @@ class CrudeAdd:
                      price: int | None = None,  # Цена объявления
                      year_car: int | None = None,  # Год выпуска автомобиля
                      car_brand_id: int | None = None,  # ID марки автомобиля
+                     model_name: str | None = None,  # Модель автомобиля
                      mileage_km_car: int | None = None,  # Пробег в км
                      vin_number: str | None = None,  # Уникальный VIN-номер
+                     region: str | None = None,  # Регион продажи
+                     condition: str | None = None,  # Состояние авто
                      day_count: int | None = None,  # Количество дней публикации по умолчанию 7
                      is_active: bool | None = None  # Активно ли объявление
                      ) -> Ad:
@@ -96,8 +109,11 @@ class CrudeAdd:
         :param price: Цена автомобиля
         :param year_car: Год выпуска автомобиля
         :param car_brand_id: Бренд автомобиля
+        :param model_name: Модель автомобиля
         :param mileage_km_car: Пробег автомобиля в км
         :param vin_number: Уникальный VIN-номер автомобиля
+        :param region: Регион продажи
+        :param condition: Состояние авто
         :param day_count: Количество дней публикации объявления
         :param is_active: Статус активности объявления
         :return:
@@ -122,8 +138,11 @@ class CrudeAdd:
                     "price": price,
                     "year_car": year_car,
                     "car_brand_id": car_brand_id,
+                    "model_name": model_name,
                     "mileage_km_car": mileage_km_car,
                     "vin_number": vin_number,
+                    "region": region,
+                    "condition": condition,
                     "day_count": day_count,
                     "is_active": is_active
                 }
@@ -247,6 +266,10 @@ class CrudeAdd:
         max_year_car: int | None = None,
         min_mileage: int | None = None,  # Минимальный пробег в км
         max_mileage: int | None = None,  # Максимальный пробег в км
+        region: str | None = None,  # Регион продажи
+        condition: str | None = None,  # Состояние авто
+        sort_by: str | None = None,
+        sort_order: str = "desc",
         *,
         is_active: bool = True,
         limit: int | None = None,
@@ -260,6 +283,10 @@ class CrudeAdd:
         :param year_car: Год выпуска автомобиля (необязательно)
         :param min_mileage: Минимальный пробег в км (необязательно)
         :param max_mileage: Максимальный пробег в км (необязательно)
+        :param region: Регион продажи
+        :param condition: Состояние автомобиля (целый / после дтп)
+        :param sort_by: Поле сортировки (price / created)
+        :param sort_order: Направление сортировки (asc / desc)
         :return: Список отфильтрованных объектов Ad
         """
         async with self.session() as session:
@@ -284,8 +311,18 @@ class CrudeAdd:
                 query = query.where(Ad.mileage_km_car >= min_mileage)
             if max_mileage is not None:
                 query = query.where(Ad.mileage_km_car <= max_mileage)
+            if region:
+                query = query.where(func.lower(Ad.region) == func.lower(region))
+            if condition:
+                query = query.where(func.lower(Ad.condition) == func.lower(condition))
 
-            query = query.order_by(Ad.created_at.desc())
+            order_column = Ad.created_at
+            if (sort_by or "").lower() == "price":
+                order_column = Ad.price
+            if (sort_order or "").lower() == "asc":
+                query = query.order_by(order_column.asc(), Ad.id.asc())
+            else:
+                query = query.order_by(order_column.desc(), Ad.id.desc())
             if limit is not None:
                 query = query.limit(limit)
             if offset is not None:
@@ -304,6 +341,8 @@ class CrudeAdd:
         max_year_car: int | None = None,
         min_mileage: int | None = None,
         max_mileage: int | None = None,
+        region: str | None = None,
+        condition: str | None = None,
         *,
         is_active: bool = True,
     ) -> int:
@@ -328,6 +367,10 @@ class CrudeAdd:
                 query = query.where(Ad.mileage_km_car >= min_mileage)
             if max_mileage is not None:
                 query = query.where(Ad.mileage_km_car <= max_mileage)
+            if region:
+                query = query.where(func.lower(Ad.region) == func.lower(region))
+            if condition:
+                query = query.where(func.lower(Ad.condition) == func.lower(condition))
             result = await session.execute(query)
             return result.scalar_one() or 0
 

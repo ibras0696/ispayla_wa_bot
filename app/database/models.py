@@ -37,8 +37,11 @@ class Ad(Base):
     price = Column(Integer, nullable=False)  # Цена автомобиля
     year_car = Column(Integer, nullable=False)  # Год выпуска автомобиля
     car_brand_id = Column(Integer, ForeignKey('car_brands.id'), index=True)  # Марка авто
+    model_name = Column(String(100), nullable=True)  # Модель авто
     mileage_km_car = Column(Integer, nullable=False)  # Пробег в км
     vin_number = Column(String(100), nullable=False, unique=True, index=True)  # Уникальный VIN-номер
+    region = Column(String(100), nullable=True)  # Регион продажи
+    condition = Column(String(50), nullable=True)  # Состояние (целый / после ДТП)
     day_count = Column(Integer, default=0)  # Количество дней публикации
     is_active = Column(Boolean, default=False)  # Активно ли объявление
     created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))  # Время публикации объявления
