@@ -105,10 +105,7 @@ def _send_profile_screen(notification: Notification, sender: str) -> None:
 
 def _send_back_button(notification: Notification, title: str = "Меню") -> None:
     """Отправить кнопку «Назад» к главному меню."""
-    # Берём chatId так же, как и в guard_sender/chat_sender — надёжнее, чем поле chat.
-    from ..services.guard import chat_sender
-
-    chat_id = chat_sender(notification)
+    chat_id = notification.chat or chat_sender(notification)
     if not chat_id:
         return
     payload = {
