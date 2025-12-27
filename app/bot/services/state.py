@@ -65,7 +65,7 @@ async def _get_ads_preview(sender: str, limit: int = 5):
         imgs = images_map.get(ad.id) or []
         summary.append({
             "id": ad.id,
-            "title": getattr(ad, "title", None) or f"Объявление #{ad.id}",
+            "title": getattr(ad, "title", None) or f"Объявление №{ad.id}",
             "price": getattr(ad, "price", 0),
             "status": "активно" if getattr(ad, "is_active", False) else "в обработке",
             "photo": imgs[0].image_url if imgs else None,
@@ -358,6 +358,12 @@ async def _get_favorites(sender: str):
     return await _get_ads_by_ids(ids, active_only=True)
 
 
+async def _is_favorite(sender: str, ad_id: int) -> bool:
+    """Проверить, добавлено ли объявление в избранное конкретного пользователя."""
+    favs = await crud_manager.favorite.get_by_sender(sender)
+    return any(fav.ad_id == ad_id for fav in favs)
+
+
 def get_brand_by_name(name: str):
     """Синхронно получить бренд по имени."""
     return db_runner.run(_get_brand_by_name(name))
@@ -376,3 +382,8 @@ def remove_favorite(sender: str, ad_id: int):
 def get_favorites(sender: str):
     """Синхронно получить активные объявления из избранного отправителя."""
     return db_runner.run(_get_favorites(sender))
+
+
+def is_favorite(sender: str, ad_id: int) -> bool:
+    """Проверить, есть ли объявление в избранном отправителя."""
+    return db_runner.run(_is_favorite(sender, ad_id))

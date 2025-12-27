@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..services.state import get_user, get_balance
+from ..services.state import get_user, get_balance, get_favorites
 
 
 def build_profile_text(sender: str) -> str:
@@ -14,10 +14,21 @@ def build_profile_text(sender: str) -> str:
         if getattr(user, "registered_at", None)
         else "-"
     )
-    return (
-        "Профиль\n"
-        f"ID: {sender}\n"
-        f"Имя: {username}\n"
-        f"Баланс: {get_balance(sender)} ₽\n"
-        f"Регистрация: {registered}"
-    )
+    lines = [
+        "Профиль",
+        f"ID: {sender}",
+        f"Имя: {username}",
+        f"Баланс: {get_balance(sender)} ₽",
+        f"Регистрация: {registered}",
+    ]
+    favorites = get_favorites(sender)
+    if favorites:
+        lines.append("")
+        lines.append(f"Избранное: {len(favorites)} объявлений.")
+        for ad in favorites[:3]:
+            lines.append(f"• ID {ad.id}: {ad.title} — {ad.price} ₽")
+        lines.append("Напиши `ID 123`, чтобы открыть карточку, или открой `Покупка → Избранное`.")
+    else:
+        lines.append("")
+        lines.append("Избранное: пока пусто. Открой объявление и нажми кнопку «Добавить в избранное».")
+    return "\n".join(lines)

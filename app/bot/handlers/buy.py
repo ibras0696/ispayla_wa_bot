@@ -21,9 +21,13 @@ from ..services.state import (
     get_brand_by_name,
     add_favorite,
     get_favorites,
+    remove_favorite,
+    is_favorite,
 )
 from ..ui.buttons import BUY_MENU_BUTTONS, BUY_TEXT_TO_BUTTON, BUY_NAV_BUTTONS, BACK_MENU_BUTTON
 from ..ui.texts import BUY_MENU_TEXT, BUY_PLACEHOLDER_RESPONSES
+from ..services.keyboard import keyboard_sender
+from ..services.media import prepare_media_paths
 
 logger = logging.getLogger("app.bot.handlers.buy")
 
@@ -132,17 +136,18 @@ def send_buy_menu(notification: Notification, sender: str) -> None:
     chat_id = notification.chat
     if not chat_id:
         return
-    payload = {
-        "chatId": chat_id,
-        **BUY_MENU_TEXT,
-        "buttons": BUY_MENU_BUTTONS + [BACK_MENU_BUTTON],
-    }
-    notification.api.request(
-        "POST",
-        "{{host}}/waInstance{{idInstance}}/sendInteractiveButtonsReply/{{apiTokenInstance}}",
-        payload,
-    )
-    logger.debug("Меню покупки отправлено для %s", sender)
+    try:
+        keyboard_sender(
+            chat_id=chat_id,
+            body=BUY_MENU_TEXT["body"],
+            header=BUY_MENU_TEXT["header"],
+            footer=BUY_MENU_TEXT["footer"],
+            buttons=BUY_MENU_BUTTONS + [BACK_MENU_BUTTON],
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Не удалось отправить меню покупки: %s", exc)
+    else:
+        logger.debug("Меню покупки отправлено для %s", sender)
 
 
 def handle_buy_button(notification: Notification, settings: Settings, sender: str, button_id: str) -> None:
@@ -155,6 +160,9 @@ def handle_buy_button(notification: Notification, settings: Settings, sender: st
     :param button_id: ID выбранной кнопки (buy, buy_all, buy_filter, buy_favorites, buy_search).
     """
     ensure_user(sender, sender_name(notification))
+    if button_id.startswith("buy_fav_add:") or button_id.startswith("buy_fav_remove:"):
+        _handle_favorite_button(notification, sender, button_id)
+        return
     if button_id == "buy":
         _reset_filters(sender)
         send_buy_menu(notification, sender)
@@ -208,21 +216,23 @@ def handle_buy_text(notification: Notification, settings: Settings, sender: str,
         logger.info("Запрос детали объявления: chat=%s id=%s, cache_ids=%s", sender, detail_id, _LAST_CATALOG.get(sender))
         detail_text, image_paths = _build_ad_detail(sender, detail_id)
         notification.answer(detail_text)
-        for idx, path in enumerate(image_paths[:3], start=1):
+        for idx, path in enumerate(image_paths, start=1):
             notification.answer_with_file(str(path), caption=f"Фото {idx}")
+        _send_favorite_button(notification, sender, detail_id)
         return True
 
     # Добавление в избранное после просмотра
     if cleaned in {"в избранное", "избранное", "добавить в избранное", "fav", "f+"}:
         last = _LAST_VIEWED.get(sender)
         if not last:
-            notification.answer("Сначала откройте объявление по ID, потом можно добавить в избранное.")
+            notification.answer("Сначала откройте объявление по ID и воспользуйтесь кнопкой «Добавить в избранное».")
             return True
         try:
             add_favorite(sender, last)
             notification.answer("Добавил в избранное.")
         except Exception:
             notification.answer("Не удалось добавить в избранное.")
+        _send_favorite_button(notification, sender, last)
         return True
 
     # Навигация по фильтрам/пагинации
@@ -233,12 +243,12 @@ def handle_buy_text(notification: Notification, settings: Settings, sender: str,
         _send_catalog(notification, sender)
         return True
     if cleaned in {"дальше", "вперед", "вперёд", "next"}:
-        _shift_page(sender, 1)
-        _send_catalog(notification, sender)
+        notification.answer("Используй кнопки «➡️ Следующая» и «⬅️ Предыдущая» под каталогом.")
+        _send_nav_buttons(notification, sender)
         return True
     if cleaned in {"назад", "prev", "пред", "предыдущая"}:
-        _shift_page(sender, -1)
-        _send_catalog(notification, sender)
+        notification.answer("Используй кнопки «⬅️ Предыдущая» и «➡️ Следующая» под каталогом.")
+        _send_nav_buttons(notification, sender)
         return True
 
     # Установка фильтров (цена/год/пробег/марка)
@@ -323,7 +333,7 @@ def _build_ad_detail(viewer: str, ad_id: int) -> tuple[str, list[Path]]:
     _LAST_VIEWED[viewer] = ad["id"]
     contact_phone = _format_phone(ad.get("sender"))
     lines = [
-        f"Объявление #{ad['id']}",
+        f"Объявление №{ad['id']}",
         ad["title"] or "Без названия",
         f"Модель: {ad.get('model') or '-'}",
         f"Цена: {ad['price']} ₽",
@@ -336,15 +346,58 @@ def _build_ad_detail(viewer: str, ad_id: int) -> tuple[str, list[Path]]:
     detail_text = "\n".join([ln for ln in lines if ln])
 
     # Попытка получить фото из БД (первые несколько изображений)
-    ad_obj, images = get_public_ad_with_images(ad["id"])
-    if images:
-        paths = [Path(img.image_url) for img in images]
-        existing = [p for p in paths if p.exists()]
-        if not existing and paths:
-            logger.info("Нет доступных файлов для фото объявления id=%s paths=%s", ad_id, paths)
-        if existing:
-            return detail_text, existing
-    return detail_text, []
+    _ad_obj, images = get_public_ad_with_images(ad["id"])
+    media_paths = prepare_media_paths(images, limit=3)
+    if not media_paths and images:
+        logger.info("Нет доступных файлов для фото объявления id=%s", ad_id)
+    return detail_text, media_paths
+
+
+def _send_favorite_button(notification: Notification, sender: str, ad_id: int) -> None:
+    """Показать кнопку добавления/удаления из избранного для карточки."""
+    chat_id = notification.chat
+    if not chat_id:
+        return
+    favorite = is_favorite(sender, ad_id)
+    if favorite:
+        button = {"buttonId": f"buy_fav_remove:{ad_id}", "buttonText": "Убрать из избранного"}
+        body = "Объявление уже в избранном."
+    else:
+        button = {"buttonId": f"buy_fav_add:{ad_id}", "buttonText": "Добавить в избранное"}
+        body = "Добавить объявление в избранное?"
+    try:
+        keyboard_sender(
+            chat_id=chat_id,
+            body=body,
+            header="Избранное",
+            footer="Или напиши `в избранное`",
+            buttons=[button, BACK_MENU_BUTTON],
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Не удалось отправить кнопку избранного: %s", exc)
+
+
+def _handle_favorite_button(notification: Notification, sender: str, button_id: str) -> None:
+    """Обработать кнопки добавления/удаления из избранного."""
+    _, _, raw_id = button_id.partition(":")
+    try:
+        ad_id = int(raw_id)
+    except ValueError:
+        notification.answer("Не понял ID объявления.")
+        return
+    if button_id.startswith("buy_fav_add"):
+        try:
+            add_favorite(sender, ad_id)
+            notification.answer("Объявление добавлено в избранное.")
+        except Exception:  # noqa: BLE001
+            notification.answer("Не удалось добавить в избранное.")
+    else:
+        try:
+            remove_favorite(sender, ad_id)
+            notification.answer("Объявление убрано из избранного.")
+        except Exception:  # noqa: BLE001
+            notification.answer("Не удалось обновить избранное.")
+    _send_favorite_button(notification, sender, ad_id)
 
 
 def _build_search_text(sender: str, query: str, limit: int = 5) -> str:
@@ -357,8 +410,8 @@ def _build_search_text(sender: str, query: str, limit: int = 5) -> str:
     _LAST_DETAILS[sender] = {ad["id"]: ad for ad in ads}
     lines = [f"Нашёл {len(ads)} объявлений:"]
     for idx, ad in enumerate(ads, start=1):
-        lines.append(f"{idx}. {ad['title']} — {ad['price']} ₽, {ad['year']} г., {ad['mileage']} км (ID#{ad['id']})")
-    lines.append("Пришлите номер из списка или ID#, чтобы открыть карточку.")
+        lines.append(f"{idx}. {ad['title']} — {ad['price']} ₽, {ad['year']} г., {ad['mileage']} км (ID {ad['id']})")
+    lines.append("Пришлите номер из списка (например, `1`) или `ID 123`, чтобы открыть карточку.")
     return "\n".join(lines)
 
 
@@ -409,15 +462,15 @@ def _build_filter_text(sender: str) -> str:
         f"• Сортировка: {sort_label}",
         "",
         "Примеры команд:",
-        "цена 100000-500000",
-        "год 2010  или  год 2010-2015",
-        "пробег 0-150000",
-        "марка Toyota",
-        "регион Грозный  (или «регион любой» для сброса)",
-        "состояние целый  или  состояние после ДТП",
-        "сортировка цена дешевле (или «сортировка дата»)",
+        "`цена 100000-500000`",
+        "`год 2010`  или  `год 2010-2015`",
+        "`пробег 0-150000`",
+        "`марка Toyota`",
+        "`регион Грозный`  (или `регион любой` для сброса)",
+        "`состояние целый`  или  `состояние после ДТП`",
+        "`сортировка цена дешевле` (или `сортировка дата`)",
         "",
-        "Дополнительно: «показать» — применить фильтры, «дальше/назад» — листать, «сброс» — очистить.",
+        "Дополнительно: `показать` — применить фильтры, `дальше` / `назад` — листать, `сброс` — очистить.",
     ]
     return "\n".join(lines)
 
@@ -432,7 +485,7 @@ def _render_filtered(sender: str) -> str:
     _LAST_DETAILS[sender] = {ad["id"]: ad for ad in ads}
     logger.info("Рендер каталога: sender=%s page=%s total=%s ids=%s", sender, page, total, _LAST_CATALOG.get(sender))
     if not ads:
-        return "Пока нет объявлений под эти фильтры. Напиши «сброс» или «покупка», чтобы начать заново."
+        return "Пока нет объявлений под эти фильтры. Напиши `сброс` или `покупка`, чтобы начать заново."
     total_pages = max(1, (total + size - 1) // size)
     sort_desc = "новые сверху"
     if state.get("sort_by") == "price":
@@ -443,8 +496,8 @@ def _render_filtered(sender: str) -> str:
         f"Каталог: {total} шт. Страница {page + 1}/{total_pages} | Сортировка: {sort_desc}",
     ]
     for idx, ad in enumerate(ads, start=1):
-        lines.append(f"{idx}. {ad['title']} — {ad['price']} ₽, {ad['year']} г., {ad['mileage']} км (ID#{ad['id']})")
-    lines.append("Напиши номер из списка или ID#, чтобы открыть. «дальше/назад» — листать, «сброс» — очистить.")
+        lines.append(f"{idx}. {ad['title']} — {ad['price']} ₽, {ad['year']} г., {ad['mileage']} км (ID {ad['id']})")
+    lines.append("Напиши номер из списка (например, `1`) или `ID 123`, чтобы открыть. Команды: `дальше`, `назад`, `сброс`.")
     return "\n".join(lines)
 
 
@@ -463,18 +516,16 @@ def _send_catalog(notification: Notification, sender: str) -> None:
     if not buttons:
         notification.answer(text)
         return
-    payload = {
-        "chatId": chat_id,
-        "body": text,
-        "header": "Каталог объявлений",
-        "footer": "Используй кнопки для навигации",
-        "buttons": buttons,
-    }
-    notification.api.request(
-        "POST",
-        "{{host}}/waInstance{{idInstance}}/sendInteractiveButtonsReply/{{apiTokenInstance}}",
-        payload,
-    )
+    try:
+        keyboard_sender(
+            chat_id=chat_id,
+            body=text,
+            header="Каталог объявлений",
+            footer="Используй кнопки для навигации",
+            buttons=buttons,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Не удалось отправить каталог: %s", exc)
 
 
 def _send_nav_buttons(notification: Notification, sender: str) -> None:
@@ -485,18 +536,16 @@ def _send_nav_buttons(notification: Notification, sender: str) -> None:
     buttons = _nav_buttons(sender)
     if not buttons:
         return
-    payload = {
-        "chatId": chat_id,
-        "body": "Фильтры обновлены. Используй кнопки, чтобы листать каталог.",
-        "header": "Навигация каталога",
-        "footer": "⬅️ Назад / ➡️ Дальше / Обновить",
-        "buttons": buttons,
-    }
-    notification.api.request(
-        "POST",
-        "{{host}}/waInstance{{idInstance}}/sendInteractiveButtonsReply/{{apiTokenInstance}}",
-        payload,
-    )
+    try:
+        keyboard_sender(
+            chat_id=chat_id,
+            body="Фильтры обновлены. Используй кнопки, чтобы листать каталог.",
+            header="Навигация каталога",
+            footer="⬅️ Назад / ➡️ Дальше / Обновить",
+            buttons=buttons,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Не удалось отправить кнопки навигации: %s", exc)
 
 
 def _nav_buttons(sender: str) -> list[dict]:
@@ -579,7 +628,7 @@ def _update_mileage_filter(sender: str, text: str) -> str:
 def _update_brand_filter(sender: str, text: str) -> str:
     parts = text.split(maxsplit=1)
     if len(parts) < 2:
-        return "Укажите марку после слова «марка», например: марка Toyota"
+        return "Укажите марку после команды `марка`, например: `марка Toyota`."
     name = parts[1].strip()
     brand = get_brand_by_name(name)
     if not brand:
@@ -595,7 +644,7 @@ def _update_brand_filter(sender: str, text: str) -> str:
 def _update_region_filter(sender: str, text: str) -> str:
     parts = text.split(maxsplit=1)
     if len(parts) < 2:
-        return "Укажите регион после слова «регион», например: регион Грозный"
+        return "Укажите регион после команды `регион`, например: `регион Грозный`."
     region = parts[1].strip()
     state = _ensure_state(sender)
     if not region or region in {"любой", "-", "any"}:
@@ -620,10 +669,10 @@ def _normalize_condition(value: str) -> tuple[str | None, bool]:
 def _update_condition_filter(sender: str, text: str) -> str:
     parts = text.split(maxsplit=1)
     if len(parts) < 2:
-        return "Укажите состояние после слова «состояние»: целый или после ДТП."
+        return "Укажите состояние после команды `состояние`: `целый` или `после ДТП`."
     canonical, ok = _normalize_condition(parts[1])
     if not ok:
-        return "Не понял состояние. Напишите «состояние целый» или «состояние после ДТП»."
+        return "Не понял состояние. Напишите `состояние целый` или `состояние после ДТП`."
     state = _ensure_state(sender)
     state["condition"] = canonical
     state["page"] = 0
@@ -645,7 +694,7 @@ def _strip_sort_command(text: str) -> str:
 def _update_sorting(sender: str, text: str) -> str:
     body = _strip_sort_command(text)
     if not body:
-        return "Укажите что сортировать: «сорт цена» или «сорт дата»."
+        return "Укажите, что сортировать: `сорт цена` или `сорт дата`."
     tokens = body.split()
     key_token = tokens[0]
     sort_by = "created"
@@ -655,7 +704,7 @@ def _update_sorting(sender: str, text: str) -> str:
         sort_by = "created"
     else:
         # неизвестный ключ — оставляем прежний и подсказываем пользователю
-        return "Пишите «сорт цена» или «сорт дата» (по умолчанию новые сверху)."
+        return "Пишите `сорт цена` или `сорт дата` (по умолчанию новые сверху)."
 
     sort_order = "desc"
     if any(tok in _ASC_TOKENS for tok in tokens[1:]):
@@ -677,7 +726,7 @@ def _update_sorting(sender: str, text: str) -> str:
 def _build_favorites_text(sender: str) -> str:
     ads = get_favorites(sender)
     if not ads:
-        return "В избранном пусто. Откройте объявление и напишите «в избранное», чтобы сохранить."
+        return "В избранном пусто. Откройте объявление и напишите `в избранное`, чтобы сохранить."
     _LAST_CATALOG[sender] = [ad.id for ad in ads]
     _LAST_DETAILS[sender] = {ad.id: {
         "id": ad.id,
@@ -690,6 +739,6 @@ def _build_favorites_text(sender: str) -> str:
     } for ad in ads}
     lines = ["Избранное:"]
     for idx, ad in enumerate(ads, start=1):
-        lines.append(f"{idx}. {ad.title} — {ad.price} ₽, {ad.year_car} г., {ad.mileage_km_car} км (ID#{ad.id})")
-    lines.append("Пришлите номер или ID#, чтобы открыть карточку.")
+        lines.append(f"{idx}. {ad.title} — {ad.price} ₽, {ad.year_car} г., {ad.mileage_km_car} км (ID {ad.id})")
+    lines.append("Пришлите номер или `ID 123`, чтобы открыть карточку.")
     return "\n".join(lines)

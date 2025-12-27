@@ -37,13 +37,14 @@ class SellFormManager:
 
     def __init__(self) -> None:
         self._states: Dict[str, SellFormState] = {}
+        self._recently_finished: set[str] = set()
 
     def start(self, sender: str) -> str:
         """Создать состояние и вернуть первый вопрос."""
         state = SellFormState()
         self._states[sender] = state
         return (
-            "Запускаем оформление продажи. Можно написать 'отмена', чтобы выйти.\n"
+            "Запускаем оформление продажи. Можно написать `отмена`, чтобы выйти.\n"
             f"{SELL_FORM_STEPS[0]['prompt']}"
         )
 
@@ -65,7 +66,7 @@ class SellFormManager:
         text = message.strip()
         if text.lower() in CANCEL_WORDS:
             self.cancel(sender)
-            return "Окей, отменили создание объявления. Напиши «меню», чтобы вернуться в главное меню."
+            return "Окей, отменили создание объявления. Напиши `меню`, чтобы вернуться в главное меню."
 
         state = self._states[sender]
         step = SELL_FORM_STEPS[state.step_index]
@@ -77,7 +78,7 @@ class SellFormManager:
                 state.data["photos"] = list(state.photos)
                 state.step_index += 1
             else:
-                return "Отправь фотографию (как вложение) или напиши 'готово', когда закончишь."
+                return "Отправь фотографию (как вложение) или напиши `готово`, когда закончишь."
         else:
             validator = step["validator"]
             try:
@@ -95,16 +96,24 @@ class SellFormManager:
                 self.cancel(sender)
                 return f"Не удалось сохранить объявление: {exc}. Попробуй позже."
             else:
+                self._recently_finished.add(sender)
                 self.cancel(sender)
                 return (
                     "Объявление сохранено!\n"
                     f"ID: {ad.id}. Статус: {'активно' if ad.is_active else 'на модерации'}.\n"
                     "В ближайшее время модератор проверит данные.\n"
-                    "Чтобы вернуться в меню, нажми кнопку «⬅️ В меню» или напиши «меню»."
+                    "Чтобы вернуться в меню, нажми кнопку «⬅️ В меню» или напиши `меню`."
                 )
 
         next_prompt = SELL_FORM_STEPS[state.step_index]["prompt"]
         return next_prompt
+
+    def consume_recent_finish(self, sender: str) -> bool:
+        """Вернуть True один раз после успешного завершения мастера."""
+        if sender in self._recently_finished:
+            self._recently_finished.remove(sender)
+            return True
+        return False
 
     def handle_media(self, sender: str, message_data: dict) -> str:
         """Сохранить фото, если мастер ждёт вложение."""
@@ -128,8 +137,8 @@ class SellFormManager:
         if len(state.photos) >= MAX_PHOTOS:
             state.data["photos"] = list(state.photos)
             state.step_index += 1
-            return "Достаточно фото, напиши 'готово' для завершения."
-        return f"Фото сохранено ({len(state.photos)}). Отправь ещё или напиши 'готово'."
+            return "Достаточно фото, напиши `готово` для завершения."
+        return f"Фото сохранено ({len(state.photos)}). Отправь ещё или напиши `готово`."
 
 sell_form_manager = SellFormManager()
 
@@ -199,19 +208,19 @@ def _validate_condition(value: str) -> str:
 
 
 SELL_FORM_STEPS = [
-    {"key": "title", "prompt": "1️⃣ Введи заголовок объявления:", "validator": lambda v: _validate_text(v, "Заголовок")},
-    {"key": "description", "prompt": "2️⃣ Опиши автомобиль (комплектация, состояние):", "validator": lambda v: _validate_text(v, "Описание", 10)},
-    {"key": "price", "prompt": "3️⃣ Укажи цену в рублях:", "validator": _validate_price},
-    {"key": "brand", "prompt": "4️⃣ Марка (например, Toyota):", "validator": lambda v: _validate_text(v, "Марка", 2)},
-    {"key": "model", "prompt": "5️⃣ Модель (например, Camry):", "validator": lambda v: _validate_text(v, "Модель", 1)},
-    {"key": "year", "prompt": "6️⃣ Год выпуска:", "validator": _validate_year},
-    {"key": "mileage", "prompt": "7️⃣ Пробег (км):", "validator": _validate_mileage},
-    {"key": "vin", "prompt": "8️⃣ VIN-номер (17 символов):", "validator": lambda v: _validate_text(v, "VIN", 5)},
-    {"key": "region", "prompt": "9️⃣ Регион продажи (например, Грозный):", "validator": _validate_region},
-    {"key": "condition", "prompt": "🔟 Состояние авто (целый / после ДТП):", "validator": _validate_condition},
+    {"key": "title", "prompt": "1️⃣ Введи заголовок объявления (например, `Camry 2016, 2.5 AT`):", "validator": lambda v: _validate_text(v, "Заголовок")},
+    {"key": "description", "prompt": "2️⃣ Опиши автомобиль (например, `Хорошее состояние, 1 владелец`):", "validator": lambda v: _validate_text(v, "Описание", 10)},
+    {"key": "price", "prompt": "3️⃣ Укажи цену в рублях (например, `850000`):", "validator": _validate_price},
+    {"key": "brand", "prompt": "4️⃣ Марка (например, `Toyota`):", "validator": lambda v: _validate_text(v, "Марка", 2)},
+    {"key": "model", "prompt": "5️⃣ Модель (например, `Camry`):", "validator": lambda v: _validate_text(v, "Модель", 1)},
+    {"key": "year", "prompt": "6️⃣ Год выпуска (например, `2018`):", "validator": _validate_year},
+    {"key": "mileage", "prompt": "7️⃣ Пробег в км (например, `125000`):", "validator": _validate_mileage},
+    {"key": "vin", "prompt": "8️⃣ VIN-номер (например, `JH4TB2H26CC000000`):", "validator": lambda v: _validate_text(v, "VIN", 5)},
+    {"key": "region", "prompt": "9️⃣ Регион продажи (например, `Грозный`):", "validator": _validate_region},
+    {"key": "condition", "prompt": "🔟 Состояние авто (`целый` или `после ДТП`):", "validator": _validate_condition},
     {
         "key": "photos",
-        "prompt": "1️⃣1️⃣ Прикрепи фото автомобиля (до 3 шт, можно по одному). Когда закончишь, напиши 'готово'.",
+        "prompt": "1️⃣1️⃣ Прикрепи фото автомобиля (до 3 шт., по одному). Когда закончишь, напиши `готово`.",
         "validator": _validate_photos,
         "type": "photos",
     },

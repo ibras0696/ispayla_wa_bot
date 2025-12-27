@@ -3,8 +3,6 @@ from __future__ import annotations
 import logging
 
 import re
-from pathlib import Path
-
 from typing import Dict
 
 from whatsapp_chatbot_python import Notification
@@ -15,6 +13,8 @@ from ..services.state import ensure_user, get_ads_preview, get_ad_with_images
 from ..services.forms import sell_form_manager
 from ..ui.buttons import SELL_MENU_BUTTONS, SELL_TEXT_TO_BUTTON, BACK_MENU_BUTTON
 from ..ui.texts import SELL_MENU_TEXT
+from ..services.keyboard import keyboard_sender
+from ..services.media import prepare_media_paths
 
 logger = logging.getLogger("app.bot.handlers.sell")
 
@@ -26,17 +26,18 @@ def send_sell_menu(notification: Notification, sender: str) -> None:
     chat_id = notification.chat
     if not chat_id:
         return
-    payload = {
-        "chatId": chat_id,
-        **SELL_MENU_TEXT,
-        "buttons": SELL_MENU_BUTTONS + [BACK_MENU_BUTTON],
-    }
-    notification.api.request(
-        "POST",
-        "{{host}}/waInstance{{idInstance}}/sendInteractiveButtonsReply/{{apiTokenInstance}}",
-        payload,
-    )
-    logger.debug("Меню продажи отправлено для %s", sender)
+    try:
+        keyboard_sender(
+            chat_id=chat_id,
+            body=SELL_MENU_TEXT["body"],
+            header=SELL_MENU_TEXT["header"],
+            footer=SELL_MENU_TEXT["footer"],
+            buttons=SELL_MENU_BUTTONS + [BACK_MENU_BUTTON],
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Не удалось отправить меню продажи: %s", exc)
+    else:
+        logger.debug("Меню продажи отправлено для %s", sender)
 
 
 def handle_sell_button(notification: Notification, settings: Settings, sender: str, button_id: str) -> None:
@@ -49,8 +50,7 @@ def handle_sell_button(notification: Notification, settings: Settings, sender: s
         notification.answer(prompt)
     elif button_id == "sell_list":
         notification.answer(_sell_list_text(sender))
-        _send_back_button(notification)
-        notification.answer("Чтобы вернуться в меню, нажми «⬅️ В меню» или напиши «меню».")
+        _send_back_button(notification, header="Мои объявления", body="Вернуться в меню")
 
 
 def handle_sell_text(notification: Notification, settings: Settings, sender: str, text: str) -> bool:
@@ -70,17 +70,17 @@ def _sell_list_text(sender: str) -> str:
     """Подготовить текст списка объявлений и запомнить порядок."""
     total, active, summary = get_ads_preview(sender)
     if total == 0:
-        return "У тебя пока нет объявлений. Нажми «Разместить объявление», чтобы добавить первое."
+        return "У тебя пока нет объявлений. Нажми `Разместить объявление`, чтобы добавить первое."
     _LAST_SUMMARIES[sender] = [item["id"] for item in summary]
     lines = [f"Твои объявления: {total} шт. (активных {active})."]
     for idx, item in enumerate(summary, start=1):
         lines.append(
-            f"{idx}. {item['title']} — {item['price']} ₽ ({item['status']}) ID#{item['id']}"
+            f"{idx}. {item['title']} — {item['price']} ₽ ({item['status']}) ID {item['id']}"
         )
     if total > len(summary):
-        lines.append("Показаны последние объявления. Напиши цифру из списка или ID#, чтобы открыть карточку.")
+        lines.append("Показаны последние объявления. Напиши номер из списка (например, `1`) или `ID 123`, чтобы открыть карточку.")
     else:
-        lines.append("Напиши цифру (1, 2, …) или ID#, чтобы открыть и увидеть фото.")
+        lines.append("Напиши цифру (например, `1` или `2`) или `ID 123`, чтобы открыть и увидеть фото.")
     return "\n".join(lines)
 
 
@@ -118,7 +118,7 @@ def _send_ad_detail(notification: Notification, sender: str, ad_id: int) -> None
         notification.answer("Не нашёл объявление с таким номером.")
         return
     lines = [
-        f"Объявление #{ad.id}",
+        f"Объявление №{ad.id}",
         ad.title or "Без названия",
         f"Статус: {'активно' if ad.is_active else 'в обработке'}",
         f"Цена: {ad.price or 0} ₽",
@@ -131,27 +131,28 @@ def _send_ad_detail(notification: Notification, sender: str, ad_id: int) -> None
         (ad.description or "-"),
     ]
     notification.answer("\n".join(lines))
-    if images:
-        for idx, img in enumerate(images, start=1):
-            path = Path(img.image_url)
-            if path.exists():
-                notification.answer_with_file(str(path), caption=f"Фото {idx}")
+    media_paths = prepare_media_paths(images)
+    for idx, path in enumerate(media_paths, start=1):
+        notification.answer_with_file(str(path), caption=f"Фото {idx}")
+    _send_back_button(notification, header="Карточка объявления", body="Вернуться в меню")
 
 
-def _send_back_button(notification: Notification) -> None:
+def _send_back_button(
+    notification: Notification,
+    header: str = "Меню",
+    body: str = "Вернуться в главное меню",
+) -> None:
     """Отправить кнопку назад в главное меню."""
     chat_id = notification.chat
     if not chat_id:
         return
-    payload = {
-        "chatId": chat_id,
-        "header": "Мои объявления",
-        "body": "Вернуться в меню",
-        "footer": "Нажми, чтобы открыть главное меню",
-        "buttons": [{"buttonId": "back_menu", "buttonText": "⬅️ В меню"}],
-    }
-    notification.api.request(
-        "POST",
-        "{{host}}/waInstance{{idInstance}}/sendInteractiveButtonsReply/{{apiTokenInstance}}",
-        payload,
-    )
+    try:
+        keyboard_sender(
+            chat_id=chat_id,
+            body=body,
+            header=header,
+            footer="Нажми, чтобы открыть главное меню",
+            buttons=[{"buttonId": "back_menu", "buttonText": "⬅️ В меню"}],
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Не удалось отправить кнопку назад: %s", exc)

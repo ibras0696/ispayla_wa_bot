@@ -16,6 +16,7 @@ from .sell import handle_sell_text
 from .buy import handle_buy_text
 from .buy import _reset_filters
 from .menu import handle_main_menu
+from ..services.keyboard import keyboard_sender
 
 logger = logging.getLogger("app.bot.handlers.basic")
 # Короткий кэш обработанных idMessage, чтобы не отвечать дважды на outgoing/incoming пары
@@ -89,18 +90,45 @@ def handle_fallback(notification: Notification, settings: Settings, allowed: set
         if media_response:
             notification.answer(media_response)
             return
-    if sell_form_manager.has_state(sender):
-        reply = sell_form_manager.handle(sender, incoming)
-        if reply:
-            notification.answer(reply)
-        if not sell_form_manager.has_state(sender) and normalized_input in {"меню", "menu", "главное меню"}:
-            handle_main_menu(notification, settings, allowed)
-        return
+        if sell_form_manager.has_state(sender):
+            reply = sell_form_manager.handle(sender, incoming)
+            if reply:
+                notification.answer(reply)
+            if sell_form_manager.consume_recent_finish(sender):
+                _send_menu_button(notification, title="Объявление сохранено", body="Нажми кнопку, чтобы вернуться в меню.")
+            if not sell_form_manager.has_state(sender) and normalized_input in {"меню", "menu", "главное меню", "0", "00", "000"}:
+                handle_main_menu(notification, settings, allowed)
+            return
     if incoming:
+        if normalized_input in {"меню", "menu", "главное меню", "0", "00", "000"}:
+            handle_main_menu(notification, settings, allowed)
+            return
         if handle_buy_text(notification, settings, sender, incoming):
             return
         if handle_sell_text(notification, settings, sender, incoming):
             return
     logger.info("Получено сообщение от %s: %s", sender, incoming)
-    if settings.auto_reply_text and settings.auto_reply_text.strip():
-        notification.answer(settings.auto_reply_text)
+    fallback_text = (settings.auto_reply_text or "").strip()
+    if not fallback_text:
+        fallback_text = (
+            "Не понял команду. Напиши `меню`, чтобы открыть главное меню, "
+            "или используй кнопки на экране."
+        )
+    notification.answer(fallback_text)
+
+
+def _send_menu_button(notification: Notification, *, title: str = "Меню", body: str = "Вернуться в меню") -> None:
+    """Отправить кнопку возврата в главное меню."""
+    chat_id = notification.chat or chat_sender(notification)
+    if not chat_id:
+        return
+    try:
+        keyboard_sender(
+            chat_id=chat_id,
+            body=body,
+            header=title,
+            footer="Или напиши `меню` вручную",
+            buttons=[{"buttonId": "back_menu", "buttonText": "⬅️ В меню"}],
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Не удалось отправить кнопку возврата: %s", exc)

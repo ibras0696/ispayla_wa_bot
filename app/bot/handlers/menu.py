@@ -13,6 +13,7 @@ from ..ui.texts import MAIN_MENU_TEXT
 from .profile import build_profile_text
 from .sell import send_sell_menu, handle_sell_button, handle_sell_text
 from .buy import handle_buy_button, handle_buy_text
+from ..services.keyboard import keyboard_sender
 
 logger = logging.getLogger("app.bot.handlers.menu")
 
@@ -29,17 +30,18 @@ def handle_main_menu(notification: Notification, settings: Settings, allowed: se
     chat_id = notification.chat
     if not chat_id:
         return
-    payload = {
-        "chatId": chat_id,
-        **MAIN_MENU_TEXT,
-        "buttons": MAIN_MENU_BUTTONS,
-    }
-    notification.api.request(
-        "POST",
-        "{{host}}/waInstance{{idInstance}}/sendInteractiveButtonsReply/{{apiTokenInstance}}",
-        payload,
-    )
-    logger.debug("Главное меню отправлено для %s", sender)
+    try:
+        keyboard_sender(
+            chat_id=chat_id,
+            body=MAIN_MENU_TEXT["body"],
+            buttons=MAIN_MENU_BUTTONS,
+            header=MAIN_MENU_TEXT["header"],
+            footer=MAIN_MENU_TEXT["footer"],
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Не удалось отправить главное меню: %s", exc)
+    else:
+        logger.debug("Главное меню отправлено для %s", sender)
 
 
 def handle_menu_selection(notification: Notification, settings: Settings, allowed: set[str] | None) -> None:
@@ -98,8 +100,27 @@ def _dispatch_button(notification: Notification, settings: Settings, allowed: se
 
 def _send_profile_screen(notification: Notification, sender: str) -> None:
     """Отправить профиль текстом и добавить кнопку возврата."""
-    notification.answer(build_profile_text(sender))
-    _send_back_button(notification, title="Профиль", body="Нажми кнопку, чтобы вернуться в меню.")
+    chat_id = notification.chat or chat_sender(notification)
+    if not chat_id:
+        return
+    profile_text = build_profile_text(sender)
+    header = "Мой профиль"
+    body = profile_text
+    if profile_text.startswith("Профиль"):
+        _, _, rest = profile_text.partition("\n")
+        body = rest or profile_text
+    try:
+        keyboard_sender(
+            chat_id=chat_id,
+            body=body,
+            buttons=[{"buttonId": "back_menu", "buttonText": "⬅️ В меню"}],
+            header=header,
+            footer="Нажми, чтобы вернуться в меню",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Не удалось отправить профиль с кнопкой: %s", exc)
+        notification.answer(profile_text)
+        notification.answer("Чтобы вернуться в меню, нажми «⬅️ В меню» или напиши `меню`.")
 
 
 def _send_back_button(notification: Notification, title: str = "Меню", body: str = "Вернуться в главное меню") -> None:
@@ -107,19 +128,13 @@ def _send_back_button(notification: Notification, title: str = "Меню", body:
     chat_id = notification.chat or chat_sender(notification)
     if not chat_id:
         return
-    payload = {
-        "chatId": chat_id,
-        "header": title,
-        "body": body,
-        "footer": "Нажми, чтобы открыть меню",
-        "buttons": [{"buttonId": "back_menu", "buttonText": "⬅️ В меню"}],
-    }
     try:
-        notification.api.request(
-            "POST",
-            "{{host}}/waInstance{{idInstance}}/sendInteractiveButtonsReply/{{apiTokenInstance}}",
-            payload,
+        keyboard_sender(
+            chat_id=chat_id,
+            body=body,
+            buttons=[{"buttonId": "back_menu", "buttonText": "⬅️ В меню"}],
+            header=title,
+            footer="Нажми, чтобы открыть меню",
         )
-        logger.debug("Отправил кнопку Назад: chat_id=%s payload=%s", chat_id, payload)
     except Exception as exc:  # noqa: BLE001
-        logger.error("Не удалось отправить кнопку Назад: chat_id=%s payload=%s err=%s", chat_id, payload, exc)
+        logger.error("Не удалось отправить кнопку Назад: chat_id=%s err=%s", chat_id, exc)

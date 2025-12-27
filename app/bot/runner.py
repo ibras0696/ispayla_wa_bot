@@ -55,7 +55,7 @@ def create_bot(settings: Settings | None = None) -> GreenAPIBot:
     bot.router.outgoing_message(text_message="баланс")(wrap(handle_balance))
     bot.router.outgoing_api_message(text_message="баланс")(wrap(handle_balance))
 
-    menu_triggers = ["меню", "Меню", "главное меню", "menu"]
+    menu_triggers = ["меню", "Меню", "главное меню", "menu", "0", "00", "000"]
     bot.router.message(text_message=menu_triggers)(wrap(handle_main_menu))
     bot.router.outgoing_message(text_message=menu_triggers)(wrap(handle_main_menu))
 
