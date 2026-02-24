@@ -227,8 +227,3 @@ git remote add origin https://github.com/ibras0696/ispayla_wa_bot.git
 git push -u origin main
 ```
 
-> При работе через этот README просто форкните репозиторий, обновите `.env` и используйте `make up` или `make bot`.
-
----
-
-Если нужно расширить функциональность (админ-панель, модерация, интеграция с аукционом) — см. `docs/PROJECT_TZ.md` и `docs/CHECKLIST.md`. Там описаны будущие шаги и критерии готовности MVP. Удачной разработки! 🚗💬
